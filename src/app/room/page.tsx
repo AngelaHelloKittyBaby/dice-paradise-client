@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Copy, Plus, Settings, UserPlus, X } from 'lucide-react';
@@ -8,16 +8,21 @@ import { ResponsiveStage } from '@/components/layout';
 import { GameChat, SoundToggle, StarIcon, type GameChatMessage } from '@/components/ui';
 import roomBackground from '@/assets/images/backgrounds/room/room-bg.png';
 import defaultAvatar from '@/assets/images/avatars/default-player.png';
-import { useHomeSoundSetting } from '@/hooks';
+import { useHomeSoundSetting, useRoomSocket } from '@/hooks';
 import { getOnlineRoom, startOnlineRoom } from '@/modules/room/roomApi';
 import { usePlayerStore, useRoomStore } from '@/stores';
-import type { RoomMember } from '@/types/room';
+import type { Room, RoomMember } from '@/types/room';
+import type {
+  RoomSocketChatMessage,
+  RoomSocketGameStartedMessage,
+  RoomSocketPlayerKickedMessage,
+  RoomSocketSystemMessage,
+} from '@/types/roomSocket';
 import styles from './room.module.css';
 
-const emptyChatMessages: GameChatMessage[] = [];
-
 const ROOM_SLOT_COUNT = 4;
-const ROOM_SYNC_INTERVAL_MS = 2000;
+const ROOM_FALLBACK_SYNC_INTERVAL_MS = 20_000;
+const ROOM_CHAT_MESSAGE_LIMIT = 80;
 
 const avatarTones = [
   styles.avatarBlue,
@@ -49,6 +54,7 @@ export default function RoomPage() {
   const [isUpdatingReady, setIsUpdatingReady] = useState(false);
   const [kickingPlayerId, setKickingPlayerId] = useState<string | null>(null);
   const [gameCreateError, setGameCreateError] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<GameChatMessage[]>([]);
 
   const roomId = currentRoom?.id ?? '等待接口返回';
   const { soundEnabled: isSoundEnabled, setSoundEnabled: setIsSoundEnabled } = useHomeSoundSetting(
@@ -68,6 +74,107 @@ export default function RoomPage() {
   );
   const currentPlayerMember = members.find(member => member.playerId === currentPlayerId);
   const isCurrentPlayerReady = Boolean(currentPlayerMember?.isReady);
+
+  const appendChatMessage = useCallback((message: GameChatMessage) => {
+    setChatMessages(currentMessages => [...currentMessages, message].slice(-ROOM_CHAT_MESSAGE_LIMIT));
+  }, []);
+
+  const handleSocketRoomUpdated = useCallback(
+    (room: Room) => {
+      if (room.id !== currentRoom?.id) return;
+
+      setCurrentRoom(room, currentPlayerId);
+    },
+    [currentPlayerId, currentRoom?.id, setCurrentRoom]
+  );
+
+  const handleSocketPlayerKicked = useCallback(
+    (message: RoomSocketPlayerKickedMessage) => {
+      if (message.playerId && message.playerId !== currentPlayerId) return;
+
+      setCurrentRoom(null);
+      router.replace('/');
+    },
+    [currentPlayerId, router, setCurrentRoom]
+  );
+
+  const handleSocketGameStarted = useCallback(
+    (message: RoomSocketGameStartedMessage) => {
+      if (!currentPlayerId || (message.roomCode && message.roomCode !== currentRoom?.id)) return;
+
+      const params = new URLSearchParams({
+        mode: 'online',
+        roomId: currentRoom?.id ?? message.roomCode,
+        gameId: message.gameId,
+        playerId: currentPlayerId,
+      });
+
+      router.replace(`/game?${params.toString()}`);
+    },
+    [currentPlayerId, currentRoom?.id, router]
+  );
+
+  const handleSocketChatMessage = useCallback(
+    (message: RoomSocketChatMessage) => {
+      appendChatMessage({
+        id: `room-chat-${message.timestamp}-${message.playerId}`,
+        type: 'player',
+        author: message.playerName,
+        avatar: members.find(member => member.playerId === message.playerId)?.avatar,
+        text: message.message,
+      });
+    },
+    [appendChatMessage, members]
+  );
+
+  const handleSocketSystemMessage = useCallback(
+    (message: RoomSocketSystemMessage) => {
+      const text =
+        message.action === 'player_joined'
+          ? `${message.playerName} 加入了房间`
+          : message.action === 'player_left'
+            ? `${message.playerName} 离开了房间`
+            : null;
+
+      if (!text) return;
+
+      appendChatMessage({
+        id: `room-system-${message.timestamp}-${message.action}-${message.playerId}`,
+        type: 'system',
+        text,
+      });
+    },
+    [appendChatMessage]
+  );
+
+  const handleSocketError = useCallback((message: string) => {
+    setGameCreateError(message);
+  }, []);
+
+  const { isConnected: isRoomSocketConnected, sendChat } = useRoomSocket({
+    roomCode: currentRoom?.id ?? null,
+    playerId: currentPlayerId || null,
+    enabled: Boolean(currentRoom?.id && currentPlayerId),
+    onRoomUpdated: handleSocketRoomUpdated,
+    onGameStarted: handleSocketGameStarted,
+    onPlayerKicked: handleSocketPlayerKicked,
+    onChatMessage: handleSocketChatMessage,
+    onSystemMessage: handleSocketSystemMessage,
+    onSocketError: handleSocketError,
+  });
+
+  const handleSendChatMessage = useCallback(
+    (message: string) => {
+      const isSent = sendChat(message);
+
+      if (!isSent) {
+        setGameCreateError('房间实时连接恢复中，请稍后再试');
+      }
+
+      return isSent;
+    },
+    [sendChat]
+  );
 
   useEffect(() => {
     if (currentRoom?.id && currentPlayerId) return;
@@ -98,12 +205,17 @@ export default function RoomPage() {
   }, [currentPlayerId, currentRoom?.id, player, restoreCurrentRoom, router]);
 
   useEffect(() => {
-    if (!currentRoom?.id || !currentPlayerId) return;
+    if (!currentRoom?.id || !currentPlayerId || isRoomSocketConnected) return;
 
     let isCancelled = false;
     let syncTimer: number | null = null;
+    let isSyncing = false;
 
     const syncRoom = async () => {
+      if (document.visibilityState === 'hidden' || isSyncing) return;
+
+      isSyncing = true;
+
       try {
         const room = await getOnlineRoom(currentRoom.id);
         if (!isCancelled) setCurrentRoom(room, currentPlayerId);
@@ -111,19 +223,27 @@ export default function RoomPage() {
         if (isCancelled) return;
 
         console.error(error);
+      } finally {
+        isSyncing = false;
       }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void syncRoom();
     };
 
     void syncRoom();
     syncTimer = window.setInterval(() => {
       void syncRoom();
-    }, ROOM_SYNC_INTERVAL_MS);
+    }, ROOM_FALLBACK_SYNC_INTERVAL_MS);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       isCancelled = true;
       if (syncTimer) window.clearInterval(syncTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [currentPlayerId, currentRoom?.id, setCurrentRoom]);
+  }, [currentPlayerId, currentRoom?.id, isRoomSocketConnected, setCurrentRoom]);
 
   const handleCopyRoomId = async () => {
     try {
@@ -350,9 +470,10 @@ export default function RoomPage() {
         key={roomId}
         className={styles.chatPanel}
         ariaLabel="房间聊天框"
-        messages={emptyChatMessages}
+        messages={chatMessages}
         currentUserName={currentPlayerMember?.name ?? members[0]?.name ?? '乐乐玩家'}
         currentUserAvatar={getMemberAvatar(currentPlayerMember?.avatar ?? members[0]?.avatar)}
+        onSendMessage={handleSendChatMessage}
         defaultHeight={306}
         minHeight={220}
         maxHeight={430}

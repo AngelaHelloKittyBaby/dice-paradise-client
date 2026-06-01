@@ -25,7 +25,7 @@ export const PageContainer: React.FC<PageContainerProps> = ({
   className,
 }) => {
   return (
-    <div className="min-h-screen bg-game-bg">
+    <div className="min-h-screen bg-transparent">
       <Header
         player={player}
         showBack={showBack}

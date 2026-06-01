@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Home, RefreshCw, Users, X } from 'lucide-react';
 import joinRoomBoardImage from '@/assets/images/ui/panels/joinroomboard.png';
@@ -69,6 +69,10 @@ const buttonSparks = Array.from({ length: 12 }, (_, index) => ({
   delay: (index % 6) * 0.06,
 }));
 
+const JOIN_ROOM_BOARD_WIDTH = 1120;
+const JOIN_ROOM_BOARD_HEIGHT = 740;
+const JOIN_ROOM_VIEWPORT_GAP = 28;
+
 export function JoinRoomModal({
   isOpen,
   joinRoomCode,
@@ -85,8 +89,25 @@ export function JoinRoomModal({
 }: JoinRoomModalProps) {
   const [searchInputFocused, setSearchInputFocused] = useState(false);
   const [refreshSpinCount, setRefreshSpinCount] = useState(0);
+  const [viewportSize, setViewportSize] = useState({
+    width: JOIN_ROOM_BOARD_WIDTH + JOIN_ROOM_VIEWPORT_GAP,
+    height: JOIN_ROOM_BOARD_HEIGHT + JOIN_ROOM_VIEWPORT_GAP,
+  });
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
+  const modalScale = Math.min(
+    1,
+    Math.max(
+      0.1,
+      (viewportSize.width - JOIN_ROOM_VIEWPORT_GAP) / JOIN_ROOM_BOARD_WIDTH,
+      0
+    ),
+    Math.max(
+      0.1,
+      (viewportSize.height - JOIN_ROOM_VIEWPORT_GAP) / JOIN_ROOM_BOARD_HEIGHT,
+      0
+    )
+  );
   const displayedRooms: RoomData[] = rooms.map((room, index) => ({
     id: room.id,
     avatar: defaultAvatar.src,
@@ -99,6 +120,20 @@ export function JoinRoomModal({
     hasCrown: index === 0,
   }));
   const visibleError = error && !error.includes('房间不存在') ? error : null;
+
+  useEffect(() => {
+    const updateViewportSize = () => {
+      setViewportSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    updateViewportSize();
+    window.addEventListener('resize', updateViewportSize);
+
+    return () => window.removeEventListener('resize', updateViewportSize);
+  }, []);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -168,24 +203,23 @@ export function JoinRoomModal({
           </div>
 
           <motion.section
-            className="relative z-10 h-[740px] w-[1120px] max-h-[calc(100vh-28px)] max-w-[calc(100vw-28px)]"
+            className="relative z-10 h-[740px] w-[1120px] shrink-0"
             role="dialog"
             aria-modal="true"
             aria-label="加入房间"
-            initial={{ opacity: 0, scale: 0.82, y: 24 }}
+            initial={{ opacity: 0, y: 24 }}
             animate={{
               opacity: 1,
-              scale: [0.995, 1.005, 0.995],
               y: [-6, 6, -6],
             }}
-            exit={{ opacity: 0, scale: 0.82, y: 24 }}
+            exit={{ opacity: 0, y: 24 }}
             transition={{
               opacity: { duration: 0.26 },
-              scale: { duration: 5.5, repeat: Infinity, ease: 'easeInOut' },
               y: { duration: 4, repeat: Infinity, ease: 'easeInOut' },
             }}
             onClick={event => event.stopPropagation()}
             style={{
+              scale: modalScale,
               filter:
                 'drop-shadow(0 34px 60px rgba(5, 5, 24, 0.58)) drop-shadow(0 0 46px rgba(255, 190, 65, 0.26))',
             }}
@@ -299,8 +333,8 @@ export function JoinRoomModal({
                           className="inline-block"
                           animate={
                             searchInputFocused || Boolean(joinRoomCode)
-                              ? { y: -20, color: '#5264ae', fontSize: 14 }
-                              : { y: 0, color: '#a56d3d', fontSize: 15 }
+                              ? { y: -20, color: '#5264ae', fontSize: '14px' }
+                              : { y: 0, color: '#a56d3d', fontSize: '15px' }
                           }
                           transition={{ duration: 0.2, delay: index * 0.05, ease: 'easeOut' }}
                         >

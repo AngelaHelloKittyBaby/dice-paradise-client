@@ -531,7 +531,7 @@ function ActivePage() {
   return (
     <main
       data-events-page="true"
-      className="grid h-screen min-h-screen place-items-center overflow-hidden bg-[#061b45] text-white"
+      className="grid h-screen min-h-screen place-items-center overflow-hidden bg-transparent text-white"
     >
       <style jsx global>{`
         @keyframes progressFill {

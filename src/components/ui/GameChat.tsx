@@ -24,6 +24,7 @@ export interface GameChatProps {
   defaultHeight?: number;
   minHeight?: number;
   maxHeight?: number;
+  onSendMessage?: (message: string) => boolean | void;
 }
 
 const emojiOptions = [
@@ -55,6 +56,7 @@ export function GameChat({
   defaultHeight = 196,
   minHeight = 170,
   maxHeight = 430,
+  onSendMessage,
 }: GameChatProps) {
   const [displayMessages, setDisplayMessages] = useState(messages);
   const [draft, setDraft] = useState('');
@@ -102,6 +104,8 @@ export function GameChat({
 
     const text = draft.trim();
     if (!text) return;
+
+    if (onSendMessage?.(text) === false) return;
 
     setDisplayMessages(value => [
       ...value,

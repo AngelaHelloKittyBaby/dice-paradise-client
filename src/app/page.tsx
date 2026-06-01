@@ -230,6 +230,7 @@ export default function HomePage() {
   const router = useRouter();
   const player = usePlayerStore(state => state.player);
   const isLoggedIn = usePlayerStore(state => state.isLoggedIn);
+  const authToken = usePlayerStore(state => state.authToken);
   const soundSettingFallback = usePlayerStore(state => state.settings.soundEnabled);
   const createRoom = useRoomStore(state => state.createRoom);
   const currentRoom = useRoomStore(state => state.currentRoom);
@@ -258,7 +259,7 @@ export default function HomePage() {
     player?.id,
     soundSettingFallback
   );
-  const hasUserSession = Boolean(isLoggedIn && player);
+  const hasUserSession = Boolean(isLoggedIn && player && authToken?.trim());
   const playerAvatar = hasUserSession && player?.avatar ? player.avatar : defaultAvatar.src;
 
   useEffect(() => {
@@ -438,8 +439,9 @@ export default function HomePage() {
       await joinRoom(normalizedRoomCode, playerName);
       setIsRoomHallOpen(false);
       setIsJoinRoomModalOpen(false);
+      setIsRoomModeOpen(false);
       setJoinRoomCode('');
-      router.push('/room');
+      router.replace('/room');
     } catch (error) {
       setGameCreateError(getRoomApiErrorMessage(error, '加入房间失败，请稍后再试'));
     } finally {
@@ -463,8 +465,9 @@ export default function HomePage() {
       await joinRoom(roomCode, playerName);
       setIsRoomHallOpen(false);
       setIsJoinRoomModalOpen(false);
+      setIsRoomModeOpen(false);
       setJoinRoomCode('');
-      router.push('/room');
+      router.replace('/room');
     } catch (error) {
       setGameCreateError(getRoomApiErrorMessage(error, '加入房间失败，请稍后再试'));
     } finally {

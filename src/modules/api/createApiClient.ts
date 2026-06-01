@@ -10,6 +10,13 @@ interface ApiErrorPayload {
 
 let isRedirectingToLogin = false;
 
+export class ApiAuthenticationRequiredError extends Error {
+  constructor(message = '请先登录后再继续') {
+    super(message);
+    this.name = 'ApiAuthenticationRequiredError';
+  }
+}
+
 function getApiPayloadText(payload?: ApiErrorPayload) {
   if (!payload) return '';
 
@@ -29,6 +36,17 @@ function isAuthEndpoint(url?: string) {
   return Boolean(url?.includes('/auth/login') || url?.includes('/auth/register'));
 }
 
+function requiresAuthToken(url?: string) {
+  return Boolean(url?.includes('/room/create') || url?.includes('/room/join'));
+}
+
+function getAuthenticationRequiredMessage(url?: string) {
+  if (url?.includes('/room/join')) return '请先登录后再加入房间';
+  if (url?.includes('/room/create')) return '请先登录后再创建房间';
+
+  return '请先登录后再继续';
+}
+
 function isUnauthenticatedMessage(message: string) {
   return message.includes('未登录')
     || message.includes('请先登录')
@@ -41,6 +59,11 @@ function shouldRedirectToLogin(error: AxiosError<ApiErrorPayload>) {
   if (isAuthEndpoint(error.config?.url)) return false;
 
   return error.response?.status === 401 || isUnauthenticatedMessage(getApiErrorText(error));
+}
+
+export function isApiAuthenticationRequiredError(error: unknown) {
+  return error instanceof ApiAuthenticationRequiredError
+    || (axios.isAxiosError<ApiErrorPayload>(error) && shouldRedirectToLogin(error));
 }
 
 function shouldRedirectResponseToLogin(response: AxiosResponse<ApiErrorPayload>) {
@@ -65,13 +88,19 @@ export function createApiClient() {
 
   apiClient.interceptors.request.use(config => {
     const { authToken, tokenType } = usePlayerStore.getState();
+    const normalizedAuthToken = authToken?.trim();
 
-    if (authToken) {
+    if (requiresAuthToken(config.url) && !normalizedAuthToken) {
+      redirectToLogin();
+      return Promise.reject(new ApiAuthenticationRequiredError(getAuthenticationRequiredMessage(config.url)));
+    }
+
+    if (normalizedAuthToken) {
       const authorizationType = tokenType
         ? `${tokenType.charAt(0).toUpperCase()}${tokenType.slice(1)}`
         : 'Bearer';
 
-      config.headers.Authorization = `${authorizationType} ${authToken}`;
+      config.headers.Authorization = `${authorizationType} ${normalizedAuthToken}`;
     }
 
     return config;

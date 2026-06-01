@@ -1,5 +1,6 @@
 import defaultAvatar from '@/assets/images/avatars/default-player.png';
-import { createApiClient } from '@/modules/api/createApiClient';
+import axios from 'axios';
+import { createApiClient, isApiAuthenticationRequiredError } from '@/modules/api/createApiClient';
 import type {
   ApiRoomData,
   ApiRoomListItem,
@@ -21,6 +22,7 @@ interface RoomApiEnvelope<T> {
 }
 
 interface RoomApiErrorEnvelope {
+  detail?: unknown;
   msg?: string;
   message?: string;
   data?: unknown;
@@ -141,17 +143,40 @@ function getRoomApiErrorEnvelope(error: unknown): RoomApiErrorEnvelope | null {
 export function getRoomApiErrorMessage(error: unknown, fallbackMessage: string) {
   const envelope = getRoomApiErrorEnvelope(error);
 
+  if (typeof envelope?.detail === 'string' && envelope.detail.trim()) return envelope.detail;
   if (typeof envelope?.msg === 'string' && envelope.msg.trim()) return envelope.msg;
   if (typeof envelope?.message === 'string' && envelope.message.trim()) return envelope.message;
+  if (axios.isAxiosError(error) && !error.response) return '无法连接后端服务，请稍后再试';
   if (error instanceof Error && error.message.trim()) return error.message;
 
   return fallbackMessage;
 }
 
-export function isAlreadyInRoomError(error: unknown) {
-  const message = getRoomApiErrorMessage(error, '');
+function logRoomApiError(operation: string, error: unknown) {
+  if (isApiAuthenticationRequiredError(error)) return;
 
+  if (axios.isAxiosError<RoomApiErrorEnvelope>(error)) {
+    console.error(`❌ [${operation}] 错误详情:`, {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+    });
+    return;
+  }
+
+  console.error(`❌ [${operation}] 错误详情:`, {
+    message: error instanceof Error ? error.message : '未知错误',
+  });
+}
+
+function isAlreadyInRoomMessage(message: string) {
   return message.includes('已在房间') || message.toLowerCase().includes('already in');
+}
+
+export function isAlreadyInRoomError(error: unknown) {
+  return isAlreadyInRoomMessage(getRoomApiErrorMessage(error, ''));
 }
 
 function findApiRoomData(value: unknown): ApiRoomData | null {
@@ -221,15 +246,18 @@ export async function recoverJoinedRoomSession(
   const roomCode = room?.id || findRoomCode(payload);
   const recoveredRoom = room ?? (roomCode ? await getOnlineRoom(roomCode) : null);
 
-  if (!recoveredRoom) return null;
+  if (recoveredRoom) {
+    const playerId = findPlayerId(payload) || findPlayerIdByName(recoveredRoom, fallbackPlayerName);
 
-  const playerId = findPlayerId(payload) || findPlayerIdByName(recoveredRoom, fallbackPlayerName);
-  if (!playerId) return null;
+    if (playerId) {
+      return {
+        room: recoveredRoom,
+        playerId,
+      };
+    }
+  }
 
-  return {
-    room: recoveredRoom,
-    playerId,
-  };
+  return getCurrentOnlineRoom(undefined, fallbackPlayerName).catch(() => null);
 }
 
 function normalizeRoomListItem(data: ApiRoomListItem): RoomListItem {
@@ -244,18 +272,27 @@ function normalizeRoomListItem(data: ApiRoomListItem): RoomListItem {
   };
 }
 
+function normalizeJoinOnlineRoomData(data: JoinOnlineRoomData) {
+  const playerId = normalizeRoomPlayerId(data.playerId ?? data.player_id);
+
+  if (!playerId) {
+    throw new Error('Join room failed: response is missing playerId');
+  }
+
+  return {
+    room: normalizeRoomData(data.room),
+    playerId,
+  };
+}
+
 export async function createOnlineRoom(request: CreateOnlineRoomRequest): Promise<Room> {
   console.log('🏠 [createOnlineRoom] 发送请求:', JSON.stringify(request));
   try {
     const response = await apiClient.post<RoomApiEnvelope<ApiRoomData>>('/room/create', request);
     console.log('✅ [createOnlineRoom] 成功响应:', JSON.stringify(response.data));
     return normalizeRoomData(unwrapRoomApiResponse(response.data, '房间创建失败'));
-  } catch (error: any) {
-    console.error('❌ [createOnlineRoom] 错误详情:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-    });
+  } catch (error) {
+    logRoomApiError('createOnlineRoom', error);
     throw error;
   }
 }
@@ -264,41 +301,29 @@ export async function joinOnlineRoom(request: JoinOnlineRoomRequest): Promise<{ 
   console.log('🔗 [joinOnlineRoom] 发送请求:', JSON.stringify(request));
   try {
     const response = await apiClient.post<RoomApiEnvelope<JoinOnlineRoomData>>('/room/join', request);
-    console.log('✅ [joinOnlineRoom] 成功响应:', JSON.stringify(response.data));
-    const data = unwrapRoomApiResponse(response.data, '加入房间失败');
+    console.log('✅ [joinOnlineRoom] 收到响应:', JSON.stringify(response.data));
 
-    const playerId = normalizeRoomPlayerId(data.playerId ?? data.player_id);
-
-    if (!playerId) {
-      throw new Error('Join room failed: response is missing playerId');
+    if (response.data.code !== 200 && !isAlreadyInRoomMessage(response.data.msg)) {
+      throw new Error(response.data.msg || '加入房间失败');
     }
 
-    return {
-      room: normalizeRoomData(data.room),
-      playerId,
-    };
-  } catch (error: any) {
-    console.error('❌ [joinOnlineRoom] 错误详情:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-    });
+    if (!response.data.data) {
+      throw new Error(response.data.msg || '加入房间失败');
+    }
+
+    return normalizeJoinOnlineRoomData(response.data.data);
+  } catch (error) {
+    logRoomApiError('joinOnlineRoom', error);
     throw error;
   }
 }
 
 export async function getOnlineRoom(roomCode: string): Promise<Room> {
-  console.log('🏠 [getOnlineRoom] 获取房间信息:', roomCode);
   try {
     const response = await apiClient.get<RoomApiEnvelope<ApiRoomData>>(`/room/${roomCode}`);
-    console.log('✅ [getOnlineRoom] 成功响应:', JSON.stringify(response.data));
     return normalizeRoomData(unwrapRoomApiResponse(response.data, '获取房间信息失败'));
-  } catch (error: any) {
-    console.error('❌ [getOnlineRoom] 错误详情:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-    });
+  } catch (error) {
+    logRoomApiError('getOnlineRoom', error);
     throw error;
   }
 }
@@ -346,12 +371,8 @@ export async function getWaitingRoomList(): Promise<RoomListItem[]> {
     }
 
     return (response.data.data?.rooms ?? []).map(normalizeRoomListItem);
-  } catch (error: any) {
-    console.error('❌ [getWaitingRoomList] 错误详情:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-    });
+  } catch (error) {
+    logRoomApiError('getWaitingRoomList', error);
     throw error;
   }
 }

@@ -196,12 +196,14 @@ function DiceFace({
   value,
   locked,
   rolling,
+  disabled,
   index,
   onToggle,
 }: {
   value: DiceValue;
   locked: boolean;
   rolling: boolean;
+  disabled?: boolean;
   index: number;
   onToggle: () => void;
 }) {
@@ -216,6 +218,7 @@ function DiceFace({
         }`}
         style={{ '--dice-index': index } as CSSProperties}
         onClick={onToggle}
+        disabled={disabled}
         aria-pressed={locked}
         aria-label={`骰子 ${index + 1}，当前 ${value} 点，${locked ? '已锁定' : '未锁定'}`}
       >
@@ -223,7 +226,7 @@ function DiceFace({
           <span key={dotIndex} className={active ? styles.dotActive : undefined} />
         ))}
       </button>
-      <button type="button" onClick={onToggle} className={locked ? styles.keepButtonActive : undefined}>
+      <button type="button" onClick={onToggle} disabled={disabled} className={locked ? styles.keepButtonActive : undefined}>
         <LockKeyhole size={17} />
         {locked ? '已保留' : '保留'}
       </button>
@@ -310,6 +313,9 @@ export default function GamePage() {
   const roomId = queryState.roomId ?? currentRoom?.id ?? (isLocalMode ? '本地对局' : '876643');
   const selfPlayerId = queryState.playerId ?? player?.id ?? 'player-001';
   const activePlayerId = serverGameStatus?.currentPlayer ?? selfPlayerId;
+  const isOnlineMultiplayerGame = mode === 'online' && Boolean(queryState.gameId);
+  const canOperateCurrentTurn =
+    !isOnlineMultiplayerGame || Boolean(serverGameStatus && activePlayerId === selfPlayerId);
   const scorePanelPlayerById = useMemo(
     () => Object.fromEntries(scorePanelPlayers.map(item => [item.playerId, item])),
     [scorePanelPlayers]
@@ -335,7 +341,7 @@ export default function GamePage() {
         id: item.playerId,
         name: scorePanelPlayerById[item.playerId]?.username ?? item.name,
         score: item.totalScore,
-        isHost: item.playerId === selfPlayerId,
+        isHost: item.playerId === currentRoom?.hostId,
         avatarClass: item.isAi ? styles.avatarBot : avatarClasses[index % avatarClasses.length],
         avatarLabel: item.isAi ? 'AI' : item.playerId === selfPlayerId ? 'P' : `${index + 1}`,
       }));
@@ -346,7 +352,7 @@ export default function GamePage() {
         id: item.playerId,
         name: item.username,
         score: item.playerId === selfPlayerId ? calculateGrandTotal(playerScores) : 0,
-        isHost: item.playerId === selfPlayerId,
+        isHost: item.playerId === currentRoom?.hostId,
         avatarClass: avatarClasses[index % avatarClasses.length],
         avatarLabel: item.playerId === selfPlayerId ? 'P' : `${index + 1}`,
       }));
@@ -700,7 +706,7 @@ export default function GamePage() {
   }, [isResultOpen, queryState.gameId, selfPlayerId]);
 
   const toggleDieLock = async (index: number) => {
-    if (rollsLeft >= MAX_ROLLS_PER_TURN || isRolling) return;
+    if (!canOperateCurrentTurn || rollsLeft >= MAX_ROLLS_PER_TURN || isRolling) return;
 
     const nextLocked = locked.map((value, valueIndex) => (valueIndex === index ? !value : value));
     setLocked(nextLocked);
@@ -713,14 +719,14 @@ export default function GamePage() {
   };
 
   const handleResetDiceLocks = async () => {
-    if (isRolling || rollsLeft >= MAX_ROLLS_PER_TURN || !locked.some(Boolean)) return;
+    if (!canOperateCurrentTurn || isRolling || rollsLeft >= MAX_ROLLS_PER_TURN || !locked.some(Boolean)) return;
 
     setLocked(initialLocked);
     setServerGameStatus(current => (current ? { ...current, diceLocked: initialLocked } : current));
   };
 
   const handleRollDice = async () => {
-    if (rollingGuardRef.current || isRolling || rollsLeft <= 0) return;
+    if (!canOperateCurrentTurn || rollingGuardRef.current || isRolling || rollsLeft <= 0) return;
 
     rollingGuardRef.current = true;
     setIsRolling(true);
@@ -728,7 +734,7 @@ export default function GamePage() {
     try {
       const rollPromise = queryState.gameId
         ? rollGameDice(queryState.gameId, {
-            player_id: activePlayerId,
+            player_id: selfPlayerId,
             locked_dice: locked,
           })
         : mockRollDice({ roomId, playerId: activePlayerId, dice, locked }).then(nextDice => ({
@@ -786,6 +792,7 @@ export default function GamePage() {
   const handleSelectScore = async (category: ScoreCategory) => {
     if (
       scoreSubmittingGuardRef.current ||
+      !canOperateCurrentTurn ||
       !queryState.gameId ||
       completedCategories.includes(category) ||
       !unlockedScoreCategories.includes(category) ||
@@ -807,7 +814,7 @@ export default function GamePage() {
 
     try {
       const submitResult = await submitScoreItem(queryState.gameId, {
-        player_id: activePlayerId,
+        player_id: selfPlayerId,
         category,
       });
       const nextTurnPlayerId = submitResult.nextPlayerId ?? activePlayerId;
@@ -948,7 +955,7 @@ export default function GamePage() {
             <button
               className={styles.unlockAllButton}
               type="button"
-              disabled={isRolling || rollsLeft >= MAX_ROLLS_PER_TURN || !locked.some(Boolean)}
+              disabled={!canOperateCurrentTurn || isRolling || rollsLeft >= MAX_ROLLS_PER_TURN || !locked.some(Boolean)}
               onClick={handleResetDiceLocks}
             >
               <LockKeyhole size={18} />
@@ -962,6 +969,7 @@ export default function GamePage() {
                 value={value}
                 locked={locked[index]}
                 rolling={isRolling}
+                disabled={!canOperateCurrentTurn}
                 index={index}
                 onToggle={() => toggleDieLock(index)}
               />
@@ -970,11 +978,11 @@ export default function GamePage() {
           <button
             className={styles.rollButton}
             type="button"
-            disabled={isRolling || rollsLeft <= 0}
+            disabled={!canOperateCurrentTurn || isRolling || rollsLeft <= 0}
             onClick={handleRollDice}
           >
             <Dice5 size={36} />
-            {isRolling ? '投掷中' : rollsLeft === MAX_ROLLS_PER_TURN ? '投骰子' : '重掷骰子'}
+            {!canOperateCurrentTurn ? '等待其他玩家' : isRolling ? '投掷中' : rollsLeft === MAX_ROLLS_PER_TURN ? '投骰子' : '重掷骰子'}
           </button>
         </section>
 
@@ -1015,7 +1023,12 @@ export default function GamePage() {
               const hasPossibleScore = possibleScore !== undefined;
               const isUnlocked = unlockedScoreCategories.includes(category);
               const disabled =
-                isCompleted || !isUnlocked || rollsLeft === MAX_ROLLS_PER_TURN || isRolling || isSubmittingScore;
+                !canOperateCurrentTurn ||
+                isCompleted ||
+                !isUnlocked ||
+                rollsLeft === MAX_ROLLS_PER_TURN ||
+                isRolling ||
+                isSubmittingScore;
 
               return (
                 <button
