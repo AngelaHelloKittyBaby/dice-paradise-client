@@ -205,7 +205,7 @@ export default function RoomPage() {
   }, [currentPlayerId, currentRoom?.id, player, restoreCurrentRoom, router]);
 
   useEffect(() => {
-    if (!currentRoom?.id || !currentPlayerId || isRoomSocketConnected) return;
+    if (!currentRoom?.id || !currentPlayerId) return;
 
     let isCancelled = false;
     let syncTimer: number | null = null;

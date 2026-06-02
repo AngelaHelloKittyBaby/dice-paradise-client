@@ -29,9 +29,12 @@ export function useGameSocket({ gameId, playerId, enabled = true, onGameStatus }
   useEffect(() => {
     if (!enabled || !gameId || !playerId) return undefined;
 
+    let isDisposed = false;
     shouldReconnectRef.current = true;
 
     const connect = () => {
+      if (isDisposed || !shouldReconnectRef.current) return;
+
       const socketUrl = buildGameWebSocketUrl(gameId, playerId);
       console.info('[Game WebSocket] 正在连接:', socketUrl);
       const socket = new WebSocket(socketUrl);
@@ -69,19 +72,27 @@ export function useGameSocket({ gameId, playerId, enabled = true, onGameStatus }
         setIsConnected(false);
         console.info('[Game WebSocket] 已关闭:', socketUrl, event.code, event.reason);
 
-        if (!shouldReconnectRef.current || reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) return;
+        if (isDisposed || !shouldReconnectRef.current || reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) return;
 
         const reconnectAttempt = reconnectAttemptsRef.current + 1;
         reconnectAttemptsRef.current = reconnectAttempt;
         const reconnectDelay = Math.min(1000 * 2 ** (reconnectAttempt - 1), MAX_RECONNECT_DELAY_MS);
 
-        reconnectTimerRef.current = window.setTimeout(connect, reconnectDelay);
+        scheduleConnect(reconnectDelay);
       };
     };
 
-    connect();
+    const scheduleConnect = (delay: number) => {
+      reconnectTimerRef.current = window.setTimeout(() => {
+        reconnectTimerRef.current = null;
+        connect();
+      }, delay);
+    };
+
+    scheduleConnect(0);
 
     return () => {
+      isDisposed = true;
       shouldReconnectRef.current = false;
       setIsConnected(false);
 

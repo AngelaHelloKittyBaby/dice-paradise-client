@@ -378,7 +378,10 @@ export async function getWaitingRoomList(): Promise<RoomListItem[]> {
 }
 
 export async function leaveOnlineRoom(request: LeaveOnlineRoomRequest): Promise<void> {
-  const response = await apiClient.post<RoomApiEnvelope<null>>('/room/leave', request);
+  const response = await apiClient.post<RoomApiEnvelope<null>>('/room/leave', {
+    room_code: request.room_code,
+    player_id: toBackendRoomPlayerId(request.player_id),
+  });
 
   if (response.data.code !== 200) {
     throw new Error(response.data.msg || '退出房间失败');

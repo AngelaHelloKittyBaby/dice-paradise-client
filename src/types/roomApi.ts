@@ -69,6 +69,7 @@ export interface JoinOnlineRoomData {
 
 export interface LeaveOnlineRoomRequest {
   room_code: string;
+  player_id: ApiRoomPlayerId;
 }
 
 export interface KickOnlineRoomRequest {

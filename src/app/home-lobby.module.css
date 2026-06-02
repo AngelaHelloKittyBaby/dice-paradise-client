@@ -412,19 +412,46 @@
 }
 
 .currencyPill {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 172px;
-  height: 54px;
-  padding: 0 20px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  min-width: 156px;
+  height: 48px;
+  padding: 0 18px 0 54px;
+  border: 2px solid rgba(125, 200, 255, 0.72);
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(28, 74, 154, 0.96), rgba(9, 25, 72, 0.94));
+  background: linear-gradient(180deg, rgba(53, 139, 255, 0.84), rgba(24, 91, 222, 0.78));
   color: #ffffff;
-  font-size: 16px;
-  box-shadow: 0 10px 22px rgba(0, 33, 94, 0.18);
-  backdrop-filter: blur(6px);
+  box-shadow:
+    inset 0 2px 5px rgba(255, 255, 255, 0.2),
+    0 0 18px rgba(57, 161, 255, 0.34),
+    0 8px 18px rgba(0, 58, 174, 0.2);
+  backdrop-filter: blur(5px);
+}
+
+.currencyPill .rewardIconSlot {
+  position: absolute;
+  left: 3px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 244, 157, 0.76);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #fff59e, #e6c850 68%, #caa337);
+  box-shadow:
+    inset 0 3px 5px rgba(255, 255, 255, 0.42),
+    0 3px 8px rgba(72, 57, 0, 0.18);
+}
+
+.currencyPill .rewardIconSlot svg {
+  width: 29px;
+  height: 29px;
+}
+
+.currencyPill strong {
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 2px 4px rgba(0, 46, 143, 0.35);
 }
 
 .toolButton {

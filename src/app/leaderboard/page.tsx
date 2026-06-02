@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type KeyboardEvent } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import Image, { type StaticImageData } from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -14,7 +14,9 @@ import diceIconImage from '@/assets/images/ui/icons/骰子.png';
 import leaderboardBackground from '@/assets/images/backgrounds/leaderboard/leaderboard-bg.png';
 import { IslandTopNav, ResponsiveStage } from '@/components/layout';
 import { StarIcon } from '@/components/ui';
+import { useHomePoints, useLeaderboardRanking } from '@/hooks';
 import { usePlayerStore } from '@/stores';
+import type { LeaderboardRankingData } from '@/types/leaderboardApi';
 
 type LeaderboardType = 'highestScore' | 'totalGames' | 'totalWins' | 'winRate';
 
@@ -36,7 +38,8 @@ interface StatCard {
 }
 
 interface LeaderboardRow {
-  rank: number;
+  rank: number | string;
+  userId?: number;
   avatar: string;
   avatarTone: string;
   name: string;
@@ -228,6 +231,56 @@ const mockLeaderboardApiResponse: LeaderboardApiResponse = {
   },
 };
 
+const LEADERBOARD_VISIBLE_ROW_COUNT = 8;
+const LEADERBOARD_LOOKUP_LIMIT = 100;
+
+function createTotalWinsRow(item: LeaderboardRankingData['leaderboard'][number], index: number): LeaderboardRow {
+  return {
+    rank: item.rank,
+    userId: item.user_id,
+    avatar: item.nickname.trim().slice(0, 1) || 'P',
+    avatarTone: basePlayers[index % basePlayers.length].avatarTone,
+    name: item.nickname,
+    metricValue: item.total_wins.toLocaleString(),
+    time: '-',
+    exp: '-',
+  };
+}
+
+function createTotalWinsBoard(
+  ranking: LeaderboardRankingData,
+  currentPlayer?: { id: string; name: string; wins: number } | null
+): LeaderboardBoard {
+  const allRows = ranking.leaderboard.map(createTotalWinsRow);
+  const rows = allRows.slice(0, LEADERBOARD_VISIBLE_ROW_COUNT);
+  const numericCurrentPlayerId = currentPlayer ? Number(currentPlayer.id) : null;
+  const currentPlayerId = Number.isInteger(numericCurrentPlayerId) ? numericCurrentPlayerId : null;
+  const myRankingItem =
+    ranking.my_ranking ??
+    ranking.leaderboard.find(item => currentPlayerId !== null && item.user_id === currentPlayerId);
+  const myRanking = myRankingItem
+    ? createTotalWinsRow(myRankingItem, Math.max(myRankingItem.rank - 1, 0))
+    : {
+        rank: '--',
+        userId: currentPlayerId ?? undefined,
+        avatar: currentPlayer?.name.trim().slice(0, 1) || 'P',
+        avatarTone: basePlayers[0].avatarTone,
+        name: currentPlayer?.name ?? '未登录玩家',
+        metricValue: currentPlayer ? currentPlayer.wins.toLocaleString() : '-',
+        time: '-',
+        exp: '-',
+      };
+
+  return {
+    type: 'totalWins',
+    title: '总胜利局数排行榜',
+    metricLabel: '总胜利局数',
+    statValue: rows[0]?.metricValue ?? '0',
+    rows,
+    myRanking,
+  };
+}
+
 const tableGridClass = 'grid grid-cols-[140px_390px_290px_290px_210px] items-center';
 const hoverLift =
   'transition-all duration-300 hover:-translate-y-[3px] hover:shadow-[0_24px_48px_rgba(34,122,255,0.36),0_0_28px_rgba(89,185,255,0.35)]';
@@ -287,6 +340,20 @@ function StarValue({ value, className = '' }: { value: string; className?: strin
       <StarIcon size={34} />
       <span>{value}</span>
     </span>
+  );
+}
+
+function HomePointsValue({ userId }: { userId: number }) {
+  const { points } = useHomePoints(String(userId), 0);
+
+  return <StarValue value={points.toLocaleString()} className="text-[25px] font-black" />;
+}
+
+function LeaderboardPointsValue({ row }: { row: LeaderboardRow }) {
+  return row.userId === undefined ? (
+    <StarValue value={row.exp} className="text-[25px] font-black" />
+  ) : (
+    <HomePointsValue userId={row.userId} />
   );
 }
 
@@ -372,8 +439,8 @@ function MenuItemView({
   );
 }
 
-function RankBadge({ rank }: { rank: number }) {
-  if (rank <= 3) {
+function RankBadge({ rank }: { rank: number | string }) {
+  if (typeof rank === 'number' && rank <= 3) {
     const medalClass =
       rank === 1
         ? 'from-[#fff4a6] via-[#ffbd26] to-[#f28118] text-[#9a4b00]'
@@ -418,7 +485,7 @@ function LeaderboardRowView({ row }: { row: LeaderboardRow }) {
       <PlayerIdentity row={row} />
       <GemValue value={row.metricValue} className="justify-start text-[25px] font-black" />
       <span className="text-[18px] font-extrabold">{row.time}</span>
-      <StarValue value={row.exp} className="text-[25px] font-black" />
+      <LeaderboardPointsValue row={row} />
     </li>
   );
 }
@@ -437,7 +504,7 @@ function MyRankingBar({ row }: { row: LeaderboardRow }) {
       <PlayerIdentity row={row} />
       <GemValue value={row.metricValue} className="text-[25px] font-black" />
       <span className="text-[18px] font-extrabold">{row.time}</span>
-      <StarValue value={row.exp} className="text-[25px] font-black" />
+      <LeaderboardPointsValue row={row} />
     </section>
   );
 }
@@ -448,8 +515,28 @@ export default function LeaderboardPage() {
   const isLoggedIn = usePlayerStore(state => state.isLoggedIn);
   const [activeBoard, setActiveBoard] = useState<LeaderboardType>('highestScore');
   const [isAuthPromptOpen, setIsAuthPromptOpen] = useState(false);
+  const { ranking } = useLeaderboardRanking(LEADERBOARD_LOOKUP_LIMIT);
 
-  const activeBoardData = mockLeaderboardApiResponse.boards[activeBoard];
+  const rankingBoard = useMemo(
+    () => (ranking ? createTotalWinsBoard(ranking, player) : null),
+    [player, ranking]
+  );
+  const displayedBoards = useMemo(
+    () => ({
+      ...mockLeaderboardApiResponse.boards,
+      ...(rankingBoard ? { totalWins: rankingBoard } : {}),
+    }),
+    [rankingBoard]
+  );
+  const activeBoardData = displayedBoards[activeBoard];
+  const displayedStatCards = useMemo(
+    () =>
+      statCards.map(card => ({
+        ...card,
+        value: displayedBoards[card.type].rows[0]?.metricValue ?? '0',
+      })),
+    [displayedBoards]
+  );
   const hasUserSession = Boolean(isLoggedIn && player);
   const topStars = player?.coins ?? 120;
   const playerName = player?.name ?? '乐乐玩家';
@@ -579,7 +666,7 @@ export default function LeaderboardPage() {
 
         <section className="absolute left-[410px] top-[126px] z-10 w-[1320px]">
           <div className="grid grid-cols-4 gap-6">
-            {statCards.map(card => (
+            {displayedStatCards.map(card => (
               <StatCardView
                 key={card.type}
                 card={card}

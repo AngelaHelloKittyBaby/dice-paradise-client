@@ -211,11 +211,13 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       } catch {
         await leaveOnlineRoom({
           room_code: currentRoom.id,
+          player_id: currentPlayerId,
         });
       }
     } else {
       await leaveOnlineRoom({
         room_code: currentRoom.id,
+        player_id: currentPlayerId,
       });
     }
 

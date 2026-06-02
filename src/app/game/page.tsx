@@ -16,7 +16,7 @@ import { ResponsiveStage } from '@/components/layout';
 import { GameChat, SoundToggle, StarIcon, type GameChatMessage } from '@/components/ui';
 import { CATEGORY_NAMES, LOWER_CATEGORIES, MAX_ROLLS_PER_TURN, SCORE_CATEGORIES } from '@/constants/gameRules';
 import gameBackground from '@/assets/images/backgrounds/game/game-bg.png';
-import { useGameSocket, useHomeSoundSetting } from '@/hooks';
+import { useGameSocket, useHomePoints, useHomeSoundSetting } from '@/hooks';
 import {
   getGameStatus,
   quitGame,
@@ -28,6 +28,7 @@ import {
   getSettlementResultData,
   rematchSettlementGame,
 } from '@/modules/result/settlementApi';
+import { updateLeaderboardWins } from '@/modules/leaderboard/leaderboardApi';
 import { usePlayerStore, useRoomStore } from '@/stores';
 import type { DiceValue, ScoreCategory } from '@/types/game';
 import type { GameStatusSnapshot } from '@/types/gameApi';
@@ -44,6 +45,8 @@ import styles from './game.module.css';
 interface GamePlayer {
   id: string;
   name: string;
+  pointsClientId: string | null;
+  points: number;
   score: number;
   isHost?: boolean;
   avatarClass: string;
@@ -74,6 +77,8 @@ interface RollDicePayload {
 const initialDice: DiceValue[] = [1, 1, 1, 1, 1];
 const initialLocked = [false, false, false, false, false];
 const DICE_THROW_ANIMATION_MS = 1120;
+const GAME_FALLBACK_SYNC_INTERVAL_MS = 5_000;
+const RESULT_OPEN_DELAY_MS = 420;
 
 const avatarClasses = [
   styles.avatarCaptain,
@@ -112,6 +117,18 @@ function normalizeLockedDiceState(nextLocked: boolean[] | undefined, fallback: b
   return nextLocked?.length === initialLocked.length ? nextLocked : fallback;
 }
 
+function hasCompletedAllScoreCategories(scores: Partial<Record<ScoreCategory, number>>) {
+  return SCORE_CATEGORIES.every(item => scores[item.category] !== undefined);
+}
+
+function hasFinishedGame(status: GameStatusSnapshot | null) {
+  if (!status) return false;
+
+  return status.status === 'finished' || (
+    status.players.length > 0 &&
+    status.players.every(item => hasCompletedAllScoreCategories(item.scores))
+  );
+}
 
 function toOptionalBackendPlayerId(playerId: string) {
   const backendPlayerId = Number(playerId);
@@ -173,6 +190,8 @@ function getCategoryIcon(category: ScoreCategory) {
 }
 
 function PlayerCard({ player, isActive }: { player: GamePlayer; isActive?: boolean }) {
+  const { points } = useHomePoints(player.pointsClientId, player.points);
+
   return (
     <article className={`${styles.playerCard} ${isActive ? styles.playerCardActive : ''}`}>
       <div className={styles.rankBadge}>{player.score > 0 ? '★' : player.avatarLabel}</div>
@@ -184,7 +203,7 @@ function PlayerCard({ player, isActive }: { player: GamePlayer; isActive?: boole
         </div>
         <div className={styles.playerScore}>
           <StarIcon size={21} />
-          {player.score.toLocaleString()}
+          {points.toLocaleString()}
         </div>
       </div>
       {isActive && <div className={styles.activeIndicator} />}
@@ -271,6 +290,7 @@ export default function GamePage() {
   const [resultActionError, setResultActionError] = useState<string | null>(null);
   const rollingGuardRef = useRef(false);
   const scoreSubmittingGuardRef = useRef(false);
+  const reportedWinnerGameIdRef = useRef<string | null>(null);
   const { soundEnabled: isSoundEnabled, setSoundEnabled: setIsSoundEnabled } = useHomeSoundSetting(
     player?.id,
     soundSettingFallback
@@ -313,15 +333,17 @@ export default function GamePage() {
   const roomId = queryState.roomId ?? currentRoom?.id ?? (isLocalMode ? '本地对局' : '876643');
   const selfPlayerId = queryState.playerId ?? player?.id ?? 'player-001';
   const activePlayerId = serverGameStatus?.currentPlayer ?? selfPlayerId;
-  const isOnlineMultiplayerGame = mode === 'online' && Boolean(queryState.gameId);
-  const canOperateCurrentTurn =
-    !isOnlineMultiplayerGame || Boolean(serverGameStatus && activePlayerId === selfPlayerId);
   const scorePanelPlayerById = useMemo(
     () => Object.fromEntries(scorePanelPlayers.map(item => [item.playerId, item])),
     [scorePanelPlayers]
   );
   const syncedSelfPlayer = serverGameStatus?.players.find(item => item.playerId === selfPlayerId);
   const syncedActivePlayer = serverGameStatus?.players.find(item => item.playerId === activePlayerId);
+  const isServerGame = Boolean(queryState.gameId);
+  const isAiTurn = Boolean(syncedActivePlayer?.isAi);
+  const canOperateCurrentTurn =
+    !isServerGame || Boolean(serverGameStatus && activePlayerId === selfPlayerId && !isAiTurn);
+  const waitingTurnLabel = isAiTurn ? '机器人思考中' : '等待其他玩家';
   const panelSelfPlayer = scorePanelPlayerById[selfPlayerId];
   const panelActivePlayer = scorePanelPlayerById[activePlayerId];
   const selfPlayerName = panelSelfPlayer?.username ?? syncedSelfPlayer?.name ?? player?.name ?? '乐乐玩家';
@@ -340,6 +362,11 @@ export default function GamePage() {
       return orderedPlayers.map((item, index) => ({
         id: item.playerId,
         name: scorePanelPlayerById[item.playerId]?.username ?? item.name,
+        pointsClientId: item.isAi ? null : item.playerId,
+        points:
+          item.playerId === selfPlayerId
+            ? player?.coins ?? player?.gems ?? 0
+            : currentRoom?.members.find(member => member.playerId === item.playerId)?.points ?? item.totalScore,
         score: item.totalScore,
         isHost: item.playerId === currentRoom?.hostId,
         avatarClass: item.isAi ? styles.avatarBot : avatarClasses[index % avatarClasses.length],
@@ -351,6 +378,11 @@ export default function GamePage() {
       return scorePanelPlayers.map((item, index) => ({
         id: item.playerId,
         name: item.username,
+        pointsClientId: mode === 'ai' && item.playerId !== selfPlayerId ? null : item.playerId,
+        points:
+          item.playerId === selfPlayerId
+            ? player?.coins ?? player?.gems ?? 0
+            : currentRoom?.members.find(member => member.playerId === item.playerId)?.points ?? 0,
         score: item.playerId === selfPlayerId ? calculateGrandTotal(playerScores) : 0,
         isHost: item.playerId === currentRoom?.hostId,
         avatarClass: avatarClasses[index % avatarClasses.length],
@@ -362,6 +394,8 @@ export default function GamePage() {
       return currentRoom.members.map((member, index) => ({
         id: member.playerId,
         name: member.name,
+        pointsClientId: member.playerId,
+        points: member.playerId === selfPlayerId ? player?.coins ?? player?.gems ?? 0 : member.points,
         score: 0,
         isHost: member.isHost,
         avatarClass: avatarClasses[index % avatarClasses.length],
@@ -374,6 +408,8 @@ export default function GamePage() {
         {
           id: selfPlayerId,
           name: selfPlayerName,
+          pointsClientId: selfPlayerId,
+          points: player?.coins ?? player?.gems ?? 0,
           score: 0,
           isHost: true,
           avatarClass: styles.avatarCaptain,
@@ -382,6 +418,8 @@ export default function GamePage() {
         {
           id: 'ai-001',
           name: 'AI机器人',
+          pointsClientId: null,
+          points: 0,
           score: 0,
           avatarClass: styles.avatarBot,
           avatarLabel: 'AI',
@@ -393,6 +431,8 @@ export default function GamePage() {
       {
         id: selfPlayerId,
         name: selfPlayerName,
+        pointsClientId: selfPlayerId,
+        points: player?.coins ?? player?.gems ?? 0,
         score: calculateGrandTotal(playerScores),
         isHost: true,
         avatarClass: styles.avatarCaptain,
@@ -403,6 +443,8 @@ export default function GamePage() {
     currentRoom,
     isRoomGame,
     mode,
+    player?.coins,
+    player?.gems,
     playerScores,
     scorePanelPlayerById,
     scorePanelPlayers,
@@ -523,6 +565,7 @@ export default function GamePage() {
   const resultSelectedPlayerId = settlementResultData
     ? toOptionalBackendPlayerId(selfPlayerId) ?? settlementResultData.players[0]?.id ?? currentResultPlayerId
     : currentResultPlayerId;
+  const isServerGameFinished = hasFinishedGame(serverGameStatus);
 
   const resetLocalMatch = () => {
     rollingGuardRef.current = false;
@@ -669,12 +712,89 @@ export default function GamePage() {
     [applyGameStatusSnapshot, queryState.gameId, refreshScoreBoard, selfPlayerId]
   );
 
-  useGameSocket({
+  const { isConnected: isGameSocketConnected } = useGameSocket({
     gameId: queryState.gameId,
     playerId: selfPlayerId,
     enabled: Boolean(queryState.gameId && selfPlayerId),
     onGameStatus: handleSocketGameStatus,
   });
+
+  useEffect(() => {
+    const gameId = queryState.gameId;
+    if (!gameId || !isGameSocketConnected) return;
+
+    let isCancelled = false;
+
+    getGameStatus(gameId)
+      .then(status => {
+        if (isCancelled) return;
+
+        applyGameStatusSnapshot(status);
+        void refreshScoreBoard(
+          gameId,
+          status.currentPlayer ?? selfPlayerId,
+          status.rollsLeft < MAX_ROLLS_PER_TURN
+        ).catch(error => {
+          console.error(error);
+        });
+      })
+      .catch(error => {
+        if (!isCancelled) console.error(error);
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [applyGameStatusSnapshot, isGameSocketConnected, queryState.gameId, refreshScoreBoard, selfPlayerId]);
+
+  useEffect(() => {
+    const gameId = queryState.gameId;
+    if (!gameId || isResultOpen) return;
+
+    let isCancelled = false;
+    let syncTimer: number | null = null;
+    let isSyncing = false;
+
+    const syncGameStatus = async () => {
+      if (document.visibilityState === 'hidden' || isSyncing) return;
+
+      isSyncing = true;
+
+      try {
+        const status = await getGameStatus(gameId);
+        if (!isCancelled) applyGameStatusSnapshot(status);
+      } catch (error) {
+        if (!isCancelled) console.error(error);
+      } finally {
+        isSyncing = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void syncGameStatus();
+    };
+
+    syncTimer = window.setInterval(() => {
+      void syncGameStatus();
+    }, GAME_FALLBACK_SYNC_INTERVAL_MS);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      isCancelled = true;
+      if (syncTimer) window.clearInterval(syncTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [applyGameStatusSnapshot, isResultOpen, queryState.gameId]);
+
+  useEffect(() => {
+    if (!isServerGameFinished || isResultOpen) return;
+
+    const resultTimer = window.setTimeout(() => {
+      setIsResultOpen(true);
+    }, RESULT_OPEN_DELAY_MS);
+
+    return () => window.clearTimeout(resultTimer);
+  }, [isResultOpen, isServerGameFinished]);
 
   useEffect(() => {
     const gameId = queryState.gameId;
@@ -704,6 +824,29 @@ export default function GamePage() {
       isCancelled = true;
     };
   }, [isResultOpen, queryState.gameId, selfPlayerId]);
+
+  useEffect(() => {
+    const gameId = queryState.gameId;
+    const currentPlayerId = toOptionalBackendPlayerId(selfPlayerId);
+    const winner = settlementResultData?.players.find(item => item.rank === 1);
+
+    if (
+      !isResultOpen ||
+      !gameId ||
+      !winner ||
+      currentPlayerId === null ||
+      winner.id !== currentPlayerId ||
+      reportedWinnerGameIdRef.current === gameId
+    ) {
+      return;
+    }
+
+    reportedWinnerGameIdRef.current = gameId;
+
+    void updateLeaderboardWins(winner.id).catch(error => {
+      console.error('[updateLeaderboardWins] 更新胜利次数失败:', error);
+    });
+  }, [isResultOpen, queryState.gameId, selfPlayerId, settlementResultData]);
 
   const toggleDieLock = async (index: number) => {
     if (!canOperateCurrentTurn || rollsLeft >= MAX_ROLLS_PER_TURN || isRolling) return;
@@ -832,6 +975,7 @@ export default function GamePage() {
         current
           ? {
               ...current,
+              status: isGameComplete ? 'finished' : current.status,
               currentPlayer: nextTurnPlayerId,
               dice: initialDice,
               diceLocked: initialLocked,
@@ -890,7 +1034,7 @@ export default function GamePage() {
     if (isGameComplete) {
       window.setTimeout(() => {
         setIsResultOpen(true);
-      }, 420);
+      }, RESULT_OPEN_DELAY_MS);
     }
   };
 
@@ -982,7 +1126,7 @@ export default function GamePage() {
             onClick={handleRollDice}
           >
             <Dice5 size={36} />
-            {!canOperateCurrentTurn ? '等待其他玩家' : isRolling ? '投掷中' : rollsLeft === MAX_ROLLS_PER_TURN ? '投骰子' : '重掷骰子'}
+            {!canOperateCurrentTurn ? waitingTurnLabel : isRolling ? '投掷中' : rollsLeft === MAX_ROLLS_PER_TURN ? '投骰子' : '重掷骰子'}
           </button>
         </section>
 
