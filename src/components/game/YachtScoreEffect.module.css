@@ -7,12 +7,124 @@
   transform: translateZ(0);
 }
 
+.scoreCallout {
+  position: absolute;
+  left: calc(50% - 129px);
+  top: 158px;
+  z-index: 7;
+  display: flex;
+  min-width: 258px;
+  height: 96px;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  border: 2px solid rgba(255, 244, 164, 0.86);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 226, 109, 0.9)),
+    radial-gradient(circle at 28% 28%, rgba(255, 255, 255, 0.9), transparent 52%);
+  box-shadow:
+    0 20px 36px rgba(0, 31, 108, 0.24),
+    0 0 34px rgba(255, 216, 79, 0.42),
+    inset 0 2px 10px rgba(255, 255, 255, 0.72);
+  color: #0750c8;
+  pointer-events: none;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.78);
+  will-change: transform, opacity, filter;
+}
+
+.scoreCallout span {
+  font-size: 34px;
+  font-weight: 1000;
+  letter-spacing: 0;
+}
+
+.scoreCallout strong {
+  color: #ff7a13;
+  font-size: 42px;
+  font-weight: 1000;
+  letter-spacing: 0;
+  text-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.84),
+    0 0 20px rgba(255, 160, 31, 0.56);
+}
+
+.rippleField {
+  position: absolute;
+  left: calc(50% - 380px);
+  top: 214px;
+  z-index: 1;
+  width: 760px;
+  height: 320px;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.rippleField span {
+  position: absolute;
+  inset: 0;
+  border: 3px solid rgba(154, 231, 255, 0.42);
+  border-radius: 50%;
+  box-shadow:
+    0 0 22px rgba(108, 211, 255, 0.28),
+    inset 0 0 28px rgba(255, 255, 255, 0.2);
+  filter: blur(1px);
+}
+
+.rippleField span:nth-child(2) {
+  inset: 38px 88px;
+  border-color: rgba(255, 238, 142, 0.45);
+}
+
+.rippleField span:nth-child(3) {
+  inset: 78px 176px;
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+.diceBurst {
+  position: absolute;
+  left: calc(50% - 260px);
+  top: 250px;
+  z-index: 6;
+  width: 520px;
+  height: 260px;
+  pointer-events: none;
+}
+
+.diceBurst span {
+  position: absolute;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  background: linear-gradient(145deg, #ffffff, #dff3ff 58%, #8ed7ff);
+  box-shadow:
+    0 12px 22px rgba(0, 48, 130, 0.24),
+    0 0 18px rgba(116, 211, 255, 0.34),
+    inset 0 2px 8px rgba(255, 255, 255, 0.82);
+  color: #135fd4;
+  font-size: 21px;
+  font-weight: 1000;
+  opacity: 0;
+  animation: diceBurstFloat 1320ms ease-out both;
+  will-change: transform, opacity, filter;
+}
+
+.diceBurst span:nth-child(1) { left: 16%; top: 42%; animation-delay: 240ms; }
+.diceBurst span:nth-child(2) { left: 28%; top: 18%; animation-delay: 330ms; }
+.diceBurst span:nth-child(3) { left: 42%; top: 56%; animation-delay: 430ms; }
+.diceBurst span:nth-child(4) { left: 60%; top: 22%; animation-delay: 520ms; }
+.diceBurst span:nth-child(5) { left: 72%; top: 50%; animation-delay: 610ms; }
+.diceBurst span:nth-child(6) { left: 50%; top: 8%; animation-delay: 700ms; }
+
 .route {
   position: absolute;
   left: 0;
   top: 0;
   width: 620px;
-  height: 360px;
+  height: 560px;
   pointer-events: none;
   transform-origin: 50% 72%;
   will-change: transform, opacity, filter;
@@ -35,19 +147,21 @@
 
 .yachtFloat {
   position: absolute;
-  left: 0;
+  left: 16px;
   top: 0;
   z-index: 4;
-  width: 620px;
-  height: 360px;
+  width: 560px;
+  height: 560px;
   pointer-events: none;
   will-change: transform;
 }
 
 .yachtImage {
   display: block;
-  width: 620px;
+  width: 560px;
   height: auto;
+  transform: scaleX(-1);
+  transform-origin: 50% 50%;
   user-select: none;
   filter:
     drop-shadow(0 22px 26px rgba(0, 17, 61, 0.34))
@@ -56,22 +170,23 @@
 
 .wakeGroup {
   position: absolute;
-  left: -410px;
-  top: 46px;
+  left: -130px;
+  top: 342px;
   z-index: 2;
-  width: 820px;
-  height: 350px;
+  width: 850px;
+  height: 280px;
   pointer-events: none;
-  transform-origin: 86% 52%;
+  transform-origin: 54% 24%;
   will-change: transform, opacity;
 }
 
 .trailMist {
   position: absolute;
-  left: 72px;
-  top: 92px;
-  width: 640px;
-  height: 130px;
+  left: 136px;
+  top: 20px;
+  z-index: 3;
+  width: 560px;
+  height: 94px;
   border-radius: 999px;
   background:
     radial-gradient(ellipse at 72% 44%, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.24) 34%, transparent 68%),
@@ -81,19 +196,64 @@
   transform: rotate(1deg);
 }
 
+.surgeFoam {
+  position: absolute;
+  left: 150px;
+  top: 38px;
+  z-index: 4;
+  width: 520px;
+  height: 62px;
+  border-radius: 999px;
+  background:
+    radial-gradient(ellipse at 18% 48%, rgba(255, 255, 255, 0.82), transparent 38%),
+    radial-gradient(ellipse at 48% 46%, rgba(255, 255, 255, 0.9), transparent 42%),
+    radial-gradient(ellipse at 78% 52%, rgba(183, 237, 255, 0.74), transparent 44%),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+  filter: blur(7px);
+  opacity: 0.92;
+  animation: surgeFoamPulse 760ms ease-in-out infinite alternate;
+}
+
 .waveImage {
   position: absolute;
-  left: 0;
-  top: 0;
   display: block;
   width: 760px;
   height: auto;
-  opacity: 0.82;
-  filter: blur(1.6px) brightness(1.35) saturate(1.28);
+  opacity: 0.86;
+  filter: blur(1.1px) brightness(1.45) saturate(1.38);
   mix-blend-mode: screen;
   -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 76%, transparent 100%);
   mask-image: linear-gradient(90deg, transparent 0%, #000 18%, #000 76%, transparent 100%);
   user-select: none;
+  animation: waveSurge 920ms ease-in-out infinite alternate;
+}
+
+.waveImageBack {
+  left: 40px;
+  top: -38px;
+  z-index: 1;
+  opacity: 0.58;
+  transform: scaleX(1.1) scaleY(0.58) rotate(-2deg);
+}
+
+.waveImageMiddle {
+  left: 96px;
+  top: -12px;
+  z-index: 2;
+  opacity: 0.72;
+  transform: scaleX(0.98) scaleY(0.48) rotate(1deg);
+  animation-delay: 160ms;
+}
+
+.waveImageFront {
+  left: 150px;
+  top: 12px;
+  z-index: 5;
+  width: 620px;
+  opacity: 0.94;
+  transform: scaleX(0.86) scaleY(0.42) rotate(-1deg);
+  filter: blur(0.7px) brightness(1.62) saturate(1.5);
+  animation-delay: 280ms;
 }
 
 .sparkleField {
@@ -111,7 +271,7 @@
   background: radial-gradient(circle, #ffffff 0 20%, #fff5a8 32%, rgba(82, 213, 255, 0.88) 56%, transparent 72%);
   box-shadow: 0 0 14px rgba(255, 237, 135, 0.78), 0 0 22px rgba(78, 208, 255, 0.38);
   opacity: 0;
-  animation: wakeSparkle 980ms ease-out both;
+  animation: wakeSparkle 1200ms ease-out both;
 }
 
 .sparkleField span:nth-child(1) { left: 15%; top: 55%; animation-delay: 90ms; }
@@ -150,9 +310,61 @@
   }
 }
 
+@keyframes diceBurstFloat {
+  0% {
+    opacity: 0;
+    filter: blur(5px) brightness(1.25);
+    transform: translate3d(0, 28px, 0) rotate(-20deg) scale(0.38);
+  }
+
+  36% {
+    opacity: 1;
+    filter: blur(0) brightness(1.08);
+    transform: translate3d(0, 0, 0) rotate(8deg) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    filter: blur(4px) brightness(1.18);
+    transform: translate3d(0, -88px, 0) rotate(34deg) scale(0.58);
+  }
+}
+
+@keyframes waveSurge {
+  0% {
+    filter: blur(1.4px) brightness(1.32) saturate(1.24);
+    transform: translate3d(-10px, 4px, 0) scaleX(0.94) scaleY(0.48) rotate(-1deg);
+  }
+
+  100% {
+    filter: blur(0.6px) brightness(1.62) saturate(1.5);
+    transform: translate3d(16px, -8px, 0) scaleX(1.08) scaleY(0.58) rotate(1.5deg);
+  }
+}
+
+@keyframes surgeFoamPulse {
+  0% {
+    opacity: 0.62;
+    transform: translate3d(-14px, 6px, 0) scaleX(0.86) scaleY(0.86);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate3d(18px, -5px, 0) scaleX(1.08) scaleY(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sparkleField span {
     animation-duration: 1ms;
   }
-}
 
+  .diceBurst span {
+    animation-duration: 1ms;
+  }
+
+  .waveImage,
+  .surgeFoam {
+    animation-duration: 1ms;
+  }
+}

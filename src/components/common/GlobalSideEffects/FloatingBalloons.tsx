@@ -8,6 +8,7 @@ import styles from './GlobalSideEffects.module.scss';
 interface BalloonEffect {
   id: string;
   left: string;
+  top: string;
   size: number;
   duration: number;
   delay: number;
@@ -15,9 +16,10 @@ interface BalloonEffect {
 }
 
 const balloonEffects: BalloonEffect[] = [
-  { id: 'balloon-1', left: '8%', size: 118, duration: 20, delay: -4, sway: ['0vw', '2.2vw', '-1vw', '0.8vw'] },
-  { id: 'balloon-2', left: '42%', size: 154, duration: 23, delay: -15, sway: ['0vw', '-1.6vw', '1.8vw', '-0.8vw'] },
-  { id: 'balloon-3', left: '70%', size: 96, duration: 21.5, delay: -9, sway: ['0vw', '1.3vw', '-1.8vw', '0.5vw'] },
+  { id: 'balloon-1', left: '8%', top: '102%', size: 118, duration: 18, delay: -4, sway: ['0vw', '2.4vw', '-1.2vw', '1vw', '0vw'] },
+  { id: 'balloon-2', left: '42%', top: '102%', size: 154, duration: 20, delay: -15, sway: ['0vw', '-1.8vw', '2vw', '-0.8vw', '0vw'] },
+  { id: 'balloon-3', left: '70%', top: '102%', size: 96, duration: 19, delay: -9, sway: ['0vw', '1.4vw', '-2vw', '0.7vw', '0vw'] },
+  { id: 'balloon-game-top', left: '34%', top: '15%', size: 92, duration: 6.8, delay: -1.4, sway: ['0px', '18px', '-12px', '10px', '0px'] },
 ];
 
 export function FloatingBalloons() {
@@ -29,20 +31,22 @@ export function FloatingBalloons() {
           className={styles.balloonItem}
           style={{
             left: item.left,
-            top: '102%',
+            top: item.top,
             width: item.size,
             height: Math.round(item.size * 1.24),
           }}
           animate={{
-            y: ['8vh', '-118vh'],
+            y: item.top === '102%' ? ['8vh', '-118vh'] : [0, -18, 8, -10, 0],
             x: item.sway,
-            opacity: [0, 0.88, 0.92, 0],
+            rotate: [0, -2, 2.5, -1.5, 0],
+            opacity: item.top === '102%' ? [0, 0.88, 0.92, 0] : [0.72, 0.96, 0.86, 0.94, 0.72],
           }}
           transition={{
             duration: item.duration,
             delay: item.delay,
             repeat: Infinity,
             ease: 'easeInOut',
+            times: [0, 0.25, 0.52, 0.78, 1],
           }}
         >
           <Image src={balloonImage} alt="" fill sizes={`${item.size}px`} className={styles.effectImage} draggable={false} />

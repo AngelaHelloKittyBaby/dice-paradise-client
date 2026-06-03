@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import starImage from '@/assets/images/ui/icons/star.png';
 import styles from './GlobalSideEffects.module.scss';
 
-const STAR_SIZE_SCALE = 1.52;
+const STAR_SIZE_SCALE = 1.38;
 
 interface StarEffect {
   id: string;
@@ -19,6 +19,8 @@ interface StarEffect {
 }
 
 type EffectSide = 'left' | 'right';
+
+const starSizes = [18, 26, 38, 54, 30, 66, 22, 46, 34, 58, 24, 72, 28, 42, 20, 62, 36, 50, 24, 68, 32];
 
 const starGrid = [
   [10, 6],
@@ -49,7 +51,7 @@ const starEffects: Record<EffectSide, StarEffect[]> = {
     id: `star-left-${index}`,
     left: `${left}%`,
     top: `${top}%`,
-    size: 28 + (index % 5) * 6,
+    size: starSizes[index % starSizes.length],
     duration: 2.2 + (index % 4) * 0.45,
     delay: index * -0.28,
     rotation: -20 + (index % 7) * 7,
@@ -59,7 +61,7 @@ const starEffects: Record<EffectSide, StarEffect[]> = {
     id: `star-right-${index}`,
     left: `${100 - left}%`,
     top: `${Math.min(94, top + (index % 3) * 2)}%`,
-    size: 28 + ((index + 2) % 5) * 6,
+    size: starSizes[(index + 5) % starSizes.length],
     duration: 2.35 + ((index + 1) % 4) * 0.42,
     delay: index * -0.31,
     rotation: 22 - (index % 7) * 7,

@@ -41,7 +41,6 @@ import { LobbyAmbientEffects, ResponsiveStage } from '@/components/layout';
 import { GameChat, SoundToggle, StarIcon, type GameChatMessage } from '@/components/ui';
 import { JoinRoomModal, RoomHallModal } from '@/components/game';
 import { useHomePoints, useHomeSoundSetting } from '@/hooks';
-import { createGame } from '@/modules/game/gameApi';
 import { getRoomApiErrorMessage } from '@/modules/room/roomApi';
 import { usePlayerStore, useRoomStore } from '@/stores';
 import type { ApiGameMode } from '@/types/gameApi';
@@ -305,42 +304,27 @@ export default function HomePage() {
     router.push('/login?mode=register');
   };
 
-  const createGameAndEnter = async (
-    gameMode: ApiGameMode,
-    playerNames: string[],
-    extraParams: Record<string, string> = {}
-  ) => {
+  const enterPendingGame = (gameMode: ApiGameMode, extraParams: Record<string, string> = {}) => {
     if (creatingGameMode) return;
 
     setCreatingGameMode(gameMode);
     setGameCreateError(null);
 
-    try {
-      const game = await createGame({
-        game_mode: gameMode,
-        player_names: playerNames,
-      });
-      const params = new URLSearchParams({
-        mode: gameMode,
-        gameId: game.gameId,
-        playerId: game.playerId,
-        ...extraParams,
-      });
+    const params = new URLSearchParams({
+      mode: gameMode,
+      pendingCreate: '1',
+      ...extraParams,
+    });
 
-      router.push(`/game?${params.toString()}`);
-    } catch (error) {
-      setGameCreateError(error instanceof Error ? error.message : '游戏创建失败，请稍后再试');
-    } finally {
-      setCreatingGameMode(null);
-    }
+    router.push(`/game?${params.toString()}`);
   };
 
   const handleLocalGameStart = () => {
-    void createGameAndEnter('local', [playerName]);
+    enterPendingGame('local');
   };
 
   const handleAiDifficultySelect = (difficulty: AiDifficulty) => {
-    void createGameAndEnter('ai', [playerName, 'AI机器人'], { difficulty });
+    enterPendingGame('ai', { difficulty });
   };
 
   const refreshWaitingRoomList = async () => {

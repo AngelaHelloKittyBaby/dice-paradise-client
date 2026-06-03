@@ -37,6 +37,77 @@
   pointer-events: none;
 }
 
+.entryLoadingOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(61, 167, 255, 0.24), transparent 28%),
+    linear-gradient(180deg, rgba(3, 20, 52, 0.58), rgba(2, 10, 34, 0.84));
+  pointer-events: auto;
+}
+
+.entryLoadingPanel {
+  display: grid;
+  width: 420px;
+  min-height: 250px;
+  place-items: center;
+  padding: 34px 38px;
+  border: 1px solid rgba(130, 198, 255, 0.26);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(20, 40, 90, 0.96), rgba(10, 20, 50, 0.94));
+  box-shadow: 0 24px 60px rgba(0, 12, 40, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  text-align: center;
+}
+
+.entryLoadingPanel svg {
+  color: #ffd873;
+  filter: drop-shadow(0 8px 16px rgba(255, 185, 54, 0.26));
+  animation: entryLoadingDice 1.2s ease-in-out infinite;
+}
+
+.entryLoadingPanel h1 {
+  margin: 18px 0 8px;
+  color: #ffffff;
+  font-size: 30px;
+  font-weight: 1000;
+}
+
+.entryLoadingPanel p {
+  margin: 0;
+  color: rgba(231, 245, 255, 0.84);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.entryLoadingPanel button {
+  height: 48px;
+  margin-top: 22px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe28a, #f6a832);
+  color: #5f3200;
+  font-size: 17px;
+  font-weight: 1000;
+  cursor: pointer;
+  box-shadow: 0 12px 24px rgba(104, 56, 4, 0.26);
+}
+
+@keyframes entryLoadingDice {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(-8px) rotate(12deg);
+  }
+}
+
 .topLayer {
   position: absolute;
   inset: 0;
@@ -45,7 +116,6 @@
 }
 
 .logoArea,
-.backLobbyButton,
 .topActions button,
 .statusPill {
   pointer-events: auto;
@@ -126,8 +196,7 @@
   gap: 28px;
 }
 
-.topActions button,
-.backLobbyButton {
+.topActions button {
   display: inline-flex;
   height: 56px;
   align-items: center;
@@ -199,20 +268,6 @@
 
 .topActions .exitButton svg {
   color: #8d4d00;
-}
-
-.backLobbyButton {
-  position: absolute;
-  top: 116px;
-  left: 34px;
-  min-width: 156px;
-  padding: 0 20px;
-  background: rgba(12, 32, 70, 0.72);
-}
-
-.backLobbyButton span {
-  font-size: 38px;
-  line-height: 0.8;
 }
 
 .playerPanel {
@@ -734,10 +789,89 @@
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   font-size: 16px;
   font-weight: 1000;
   white-space: nowrap;
+}
+
+.categoryIcon {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  border-radius: 11px;
+  background:
+    radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.96), transparent 34%),
+    var(--category-icon-bg);
+  box-shadow:
+    0 7px 12px rgba(20, 90, 190, 0.22),
+    0 0 16px var(--category-icon-glow),
+    inset 0 2px 6px rgba(255, 255, 255, 0.7),
+    inset 0 -3px 7px rgba(0, 37, 112, 0.16);
+  color: var(--category-icon-color);
+  line-height: 1;
+  overflow: hidden;
+}
+
+.categoryIcon::after {
+  content: '';
+  position: absolute;
+  width: 15px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--category-icon-accent);
+  opacity: 0.62;
+  transform: translate3d(-7px, -9px, 0) rotate(-24deg);
+  pointer-events: none;
+}
+
+.categorySvgIcon {
+  position: relative;
+  z-index: 1;
+  filter:
+    drop-shadow(0 2px 0 rgba(0, 59, 160, 0.24))
+    drop-shadow(0 0 7px rgba(255, 255, 255, 0.38));
+}
+
+.categoryIconDice {
+  background:
+    radial-gradient(circle at 25% 20%, rgba(255, 255, 255, 0.98), transparent 31%),
+    var(--category-icon-bg);
+}
+
+.categoryDiceFace {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 7px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(232, 247, 255, 0.72));
+  box-shadow:
+    0 3px 5px rgba(0, 42, 132, 0.16),
+    inset 0 1px 3px rgba(255, 255, 255, 0.92);
+  transform: rotate(-7deg);
+}
+
+.categoryDicePip {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.categoryDicePipVisible {
+  background: var(--category-icon-color);
+  box-shadow: 0 0 5px var(--category-icon-glow);
+  opacity: 1;
 }
 
 .ruleCell small {

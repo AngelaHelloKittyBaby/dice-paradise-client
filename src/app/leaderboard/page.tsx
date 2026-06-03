@@ -2,10 +2,9 @@
 
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import Image, { type StaticImageData } from 'next/image';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
-import { ArrowLeft, Gem, Target, Trophy } from 'lucide-react';
+import { Gem, Target, Trophy } from 'lucide-react';
 import board1Background from '@/assets/images/ui/panels/leaderboard-card-1.png';
 import board2Background from '@/assets/images/ui/panels/leaderboard-card-2.png';
 import board3Background from '@/assets/images/ui/panels/leaderboard-card-3.png';
@@ -14,9 +13,9 @@ import diceIconImage from '@/assets/images/ui/icons/骰子.png';
 import leaderboardBackground from '@/assets/images/backgrounds/leaderboard/leaderboard-bg.png';
 import { IslandTopNav, ResponsiveStage } from '@/components/layout';
 import { StarIcon } from '@/components/ui';
-import { useHomePoints, useLeaderboardRanking } from '@/hooks';
+import { useHomePoints, useLeaderboardGamesRanking, useLeaderboardRanking } from '@/hooks';
 import { usePlayerStore } from '@/stores';
-import type { LeaderboardRankingData } from '@/types/leaderboardApi';
+import type { LeaderboardGamesRankingData, LeaderboardRankingData } from '@/types/leaderboardApi';
 
 type LeaderboardType = 'highestScore' | 'totalGames' | 'totalWins' | 'winRate';
 
@@ -247,34 +246,101 @@ function createTotalWinsRow(item: LeaderboardRankingData['leaderboard'][number],
   };
 }
 
+function createTotalGamesRow(item: LeaderboardGamesRankingData['leaderboard'][number], index: number): LeaderboardRow {
+  return {
+    rank: item.rank,
+    userId: item.user_id,
+    avatar: item.nickname.trim().slice(0, 1) || 'P',
+    avatarTone: basePlayers[index % basePlayers.length].avatarTone,
+    name: item.nickname,
+    metricValue: item.total_games.toLocaleString(),
+    time: '-',
+    exp: '-',
+  };
+}
+
+function getRankingIdentityKey(item: { user_id: number }) {
+  return `user:${item.user_id}`;
+}
+
+function dedupeRankingItems<T extends { user_id: number }>(items: T[]) {
+  const seenKeys = new Set<string>();
+
+  return items.filter(item => {
+    const key = getRankingIdentityKey(item);
+    if (seenKeys.has(key)) return false;
+
+    seenKeys.add(key);
+    return true;
+  });
+}
+
 function createTotalWinsBoard(
   ranking: LeaderboardRankingData,
   currentPlayer?: { id: string; name: string; wins: number } | null
 ): LeaderboardBoard {
-  const allRows = ranking.leaderboard.map(createTotalWinsRow);
+  const dedupedLeaderboard = dedupeRankingItems(ranking.leaderboard);
+  const allRows = dedupedLeaderboard.map((item, index) => createTotalWinsRow({ ...item, rank: index + 1 }, index));
   const rows = allRows.slice(0, LEADERBOARD_VISIBLE_ROW_COUNT);
-  const numericCurrentPlayerId = currentPlayer ? Number(currentPlayer.id) : null;
-  const currentPlayerId = Number.isInteger(numericCurrentPlayerId) ? numericCurrentPlayerId : null;
+  const numericCurrentUserId = currentPlayer ? Number(currentPlayer.id) : null;
+  const currentUserId = Number.isInteger(numericCurrentUserId) ? numericCurrentUserId : null;
+  const myRankingFromRows = allRows.find(row => currentUserId !== null && row.userId === currentUserId);
   const myRankingItem =
-    ranking.my_ranking ??
-    ranking.leaderboard.find(item => currentPlayerId !== null && item.user_id === currentPlayerId);
-  const myRanking = myRankingItem
+    currentUserId !== null && ranking.my_ranking?.user_id === currentUserId ? ranking.my_ranking : undefined;
+  const myRanking = myRankingFromRows ??
+    (myRankingItem
     ? createTotalWinsRow(myRankingItem, Math.max(myRankingItem.rank - 1, 0))
     : {
         rank: '--',
-        userId: currentPlayerId ?? undefined,
+        userId: currentUserId ?? undefined,
         avatar: currentPlayer?.name.trim().slice(0, 1) || 'P',
         avatarTone: basePlayers[0].avatarTone,
         name: currentPlayer?.name ?? '未登录玩家',
         metricValue: currentPlayer ? currentPlayer.wins.toLocaleString() : '-',
         time: '-',
         exp: '-',
-      };
+      });
 
   return {
     type: 'totalWins',
     title: '总胜利局数排行榜',
     metricLabel: '总胜利局数',
+    statValue: rows[0]?.metricValue ?? '0',
+    rows,
+    myRanking,
+  };
+}
+
+function createTotalGamesBoard(
+  ranking: LeaderboardGamesRankingData,
+  currentPlayer?: { id: string; name: string; totalGames: number } | null
+): LeaderboardBoard {
+  const dedupedLeaderboard = dedupeRankingItems(ranking.leaderboard);
+  const allRows = dedupedLeaderboard.map((item, index) => createTotalGamesRow({ ...item, rank: index + 1 }, index));
+  const rows = allRows.slice(0, LEADERBOARD_VISIBLE_ROW_COUNT);
+  const numericCurrentUserId = currentPlayer ? Number(currentPlayer.id) : null;
+  const currentUserId = Number.isInteger(numericCurrentUserId) ? numericCurrentUserId : null;
+  const myRankingFromRows = allRows.find(row => currentUserId !== null && row.userId === currentUserId);
+  const myRankingItem =
+    currentUserId !== null && ranking.my_ranking?.user_id === currentUserId ? ranking.my_ranking : undefined;
+  const myRanking = myRankingFromRows ??
+    (myRankingItem
+    ? createTotalGamesRow(myRankingItem, Math.max(myRankingItem.rank - 1, 0))
+    : {
+        rank: '--',
+        userId: currentUserId ?? undefined,
+        avatar: currentPlayer?.name.trim().slice(0, 1) || 'P',
+        avatarTone: basePlayers[0].avatarTone,
+        name: currentPlayer?.name ?? '未登录玩家',
+        metricValue: currentPlayer ? currentPlayer.totalGames.toLocaleString() : '-',
+        time: '-',
+        exp: '-',
+      });
+
+  return {
+    type: 'totalGames',
+    title: '总对局数排行榜',
+    metricLabel: '总对局数',
     statValue: rows[0]?.metricValue ?? '0',
     rows,
     myRanking,
@@ -512,21 +578,39 @@ function MyRankingBar({ row }: { row: LeaderboardRow }) {
 export default function LeaderboardPage() {
   const router = useRouter();
   const player = usePlayerStore(state => state.player);
+  const stats = usePlayerStore(state => state.stats);
   const isLoggedIn = usePlayerStore(state => state.isLoggedIn);
   const [activeBoard, setActiveBoard] = useState<LeaderboardType>('highestScore');
   const [isAuthPromptOpen, setIsAuthPromptOpen] = useState(false);
-  const { ranking } = useLeaderboardRanking(LEADERBOARD_LOOKUP_LIMIT);
+  const { ranking: winsRanking } = useLeaderboardRanking(LEADERBOARD_LOOKUP_LIMIT, true, player?.id);
+  const { ranking: gamesRanking } = useLeaderboardGamesRanking(LEADERBOARD_LOOKUP_LIMIT);
 
-  const rankingBoard = useMemo(
-    () => (ranking ? createTotalWinsBoard(ranking, player) : null),
-    [player, ranking]
+  const totalWinsBoard = useMemo(
+    () => (winsRanking ? createTotalWinsBoard(winsRanking, player) : null),
+    [player, winsRanking]
+  );
+  const totalGamesPlayer = useMemo(
+    () =>
+      player
+        ? {
+            id: player.id,
+            name: player.name,
+            totalGames: stats?.totalGames ?? player.wins + player.losses,
+          }
+        : null,
+    [player, stats?.totalGames]
+  );
+  const totalGamesBoard = useMemo(
+    () => (gamesRanking ? createTotalGamesBoard(gamesRanking, totalGamesPlayer) : null),
+    [gamesRanking, totalGamesPlayer]
   );
   const displayedBoards = useMemo(
     () => ({
       ...mockLeaderboardApiResponse.boards,
-      ...(rankingBoard ? { totalWins: rankingBoard } : {}),
+      ...(totalGamesBoard ? { totalGames: totalGamesBoard } : {}),
+      ...(totalWinsBoard ? { totalWins: totalWinsBoard } : {}),
     }),
-    [rankingBoard]
+    [totalGamesBoard, totalWinsBoard]
   );
   const activeBoardData = displayedBoards[activeBoard];
   const displayedStatCards = useMemo(
@@ -640,14 +724,6 @@ export default function LeaderboardPage() {
           </div>
         )}
 
-        <Link
-          href="/"
-          className={`absolute left-[45px] top-[118px] z-10 flex h-[56px] w-[182px] items-center justify-center gap-3 rounded-full border border-white/25 bg-[#1169ff]/34 text-[20px] font-black shadow-[0_12px_24px_rgba(0,30,126,0.25)] backdrop-blur-[9px] ${hoverLift}`}
-        >
-          <ArrowLeft className="text-[#dff6ff]" size={28} strokeWidth={3} />
-          返回大厅
-        </Link>
-
         <aside
           data-leaderboard-sidebar="true"
           className={`absolute left-[52px] top-[202px] z-10 h-[480px] w-[315px] rounded-t-[18px] border-x border-t border-[#56b8ff]/70 bg-[linear-gradient(180deg,rgba(18,109,255,0.96)_0%,rgba(11,76,219,0.72)_44%,rgba(7,33,141,0.28)_74%,rgba(7,33,141,0)_100%)] p-3 shadow-[0_18px_38px_rgba(0,30,112,0.28),inset_0_2px_12px_rgba(255,255,255,0.18)] ${hoverLift}`}
@@ -700,12 +776,6 @@ export default function LeaderboardPage() {
           </section>
         </section>
 
-        <p className="absolute bottom-[32px] left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full px-5 py-2 text-[17px] font-black text-white drop-shadow-[0_3px_6px_rgba(0,26,112,0.52)]">
-          <span className="grid h-[19px] w-[19px] place-items-center rounded-full bg-white text-[#104cff]">
-            +
-          </span>
-          排行榜每10分钟更新一次，数据仅供参考
-        </p>
     </ResponsiveStage>
   );
 }

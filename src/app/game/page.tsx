@@ -4,12 +4,20 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft,
   Bot,
+  Crown,
   Dice5,
+  Dices,
   DoorOpen,
+  Gem,
+  House,
   Info,
   LockKeyhole,
+  Route,
+  Sailboat,
+  Sparkles,
+  Waves,
+  type LucideIcon,
 } from 'lucide-react';
 import { GameResultModal, GameRulesModal, YachtScoreEffect } from '@/components/game';
 import { ResponsiveStage } from '@/components/layout';
@@ -18,6 +26,7 @@ import { CATEGORY_NAMES, LOWER_CATEGORIES, MAX_ROLLS_PER_TURN, SCORE_CATEGORIES 
 import gameBackground from '@/assets/images/backgrounds/game/game-bg.png';
 import { useGameSocket, useHomePoints, useHomeSoundSetting } from '@/hooks';
 import {
+  createGame,
   getGameStatus,
   quitGame,
   rollGameDice,
@@ -28,10 +37,10 @@ import {
   getSettlementResultData,
   rematchSettlementGame,
 } from '@/modules/result/settlementApi';
-import { updateLeaderboardWins } from '@/modules/leaderboard/leaderboardApi';
+import { updateLeaderboardGames, updateLeaderboardWins } from '@/modules/leaderboard/leaderboardApi';
 import { usePlayerStore, useRoomStore } from '@/stores';
 import type { DiceValue, ScoreCategory } from '@/types/game';
-import type { GameStatusSnapshot } from '@/types/gameApi';
+import type { ApiGameMode, GameStatusSnapshot } from '@/types/gameApi';
 import type { GameResultData } from '@/types/gameResult';
 import type { PossibleScoreSnapshot, ScoreLockStatusSnapshot, ScorePanelPlayerSnapshot } from '@/types/scoreApi';
 import {
@@ -65,13 +74,7 @@ interface GameQueryState {
   gameId: string | null;
   playerId: string | null;
   difficulty: string | null;
-}
-
-interface RollDicePayload {
-  roomId: string;
-  playerId: string;
-  dice: DiceValue[];
-  locked: boolean[];
+  pendingCreate: boolean;
 }
 
 const initialDice: DiceValue[] = [1, 1, 1, 1, 1];
@@ -98,23 +101,24 @@ function delay(ms: number) {
   });
 }
 
-function randomDiceValue(): DiceValue {
-  return (Math.floor(Math.random() * 6) + 1) as DiceValue;
-}
-
-async function mockRollDice(payload: RollDicePayload): Promise<DiceValue[]> {
-  await delay(760);
-
-  return payload.dice.map((value, index) => (payload.locked[index] ? value : randomDiceValue()));
-}
-
-async function mockSyncLockedDice(payload: RollDicePayload): Promise<boolean[]> {
-  await delay(120);
-  return payload.locked;
-}
-
 function normalizeLockedDiceState(nextLocked: boolean[] | undefined, fallback: boolean[] = initialLocked) {
   return nextLocked?.length === initialLocked.length ? nextLocked : fallback;
+}
+
+function resolveSyncedLockedDiceState(
+  syncedLocked: boolean[],
+  localLocked: boolean[],
+  syncedRollsLeft: number,
+  syncedCurrentPlayer: string | null,
+  previousCurrentPlayer: string | null | undefined
+) {
+  if (syncedLocked.length !== initialLocked.length) return initialLocked;
+  if (syncedLocked.some(Boolean)) return syncedLocked;
+  if (!localLocked.some(Boolean)) return syncedLocked;
+  if (syncedRollsLeft >= MAX_ROLLS_PER_TURN) return syncedLocked;
+  if (previousCurrentPlayer && syncedCurrentPlayer !== previousCurrentPlayer) return syncedLocked;
+
+  return localLocked;
 }
 
 function hasCompletedAllScoreCategories(scores: Partial<Record<ScoreCategory, number>>) {
@@ -134,6 +138,10 @@ function toOptionalBackendPlayerId(playerId: string) {
   const backendPlayerId = Number(playerId);
 
   return Number.isInteger(backendPlayerId) ? backendPlayerId : null;
+}
+
+function isApiGameMode(mode: string): mode is ApiGameMode {
+  return mode === 'local' || mode === 'ai' || mode === 'online';
 }
 
 function getDiceDots(value: DiceValue) {
@@ -169,24 +177,139 @@ function getCategoryHint(category: ScoreCategory) {
   return hints[category];
 }
 
-function getCategoryIcon(category: ScoreCategory) {
-  const icons: Record<ScoreCategory, string> = {
-    ones: '1',
-    twos: '2',
-    threes: '3',
-    fours: '4',
-    fives: '5',
-    sixes: '6',
-    threeOfAKind: '3x',
-    fourOfAKind: '4x',
-    fullHouse: 'FH',
-    smallStraight: 'S',
-    largeStraight: 'L',
-    yacht: 'Y',
-    chance: '?',
-  };
+type CategoryIconStyle = CSSProperties & {
+  '--category-icon-bg': string;
+  '--category-icon-color': string;
+  '--category-icon-glow': string;
+  '--category-icon-accent': string;
+};
 
-  return icons[category];
+const categoryDiceValueMap: Partial<Record<ScoreCategory, DiceValue>> = {
+  ones: 1,
+  twos: 2,
+  threes: 3,
+  fours: 4,
+  fives: 5,
+  sixes: 6,
+};
+
+const categoryIconMap: Partial<Record<ScoreCategory, LucideIcon>> = {
+  threeOfAKind: Gem,
+  fourOfAKind: Crown,
+  fullHouse: House,
+  smallStraight: Waves,
+  largeStraight: Route,
+  yacht: Sailboat,
+  chance: Sparkles,
+};
+
+const categoryIconThemeMap: Record<ScoreCategory, CategoryIconStyle> = {
+  ones: {
+    '--category-icon-bg': 'linear-gradient(145deg, #fff8df, #6fd3ff 58%, #1672ee)',
+    '--category-icon-color': '#0753ca',
+    '--category-icon-glow': 'rgba(55, 167, 255, 0.36)',
+    '--category-icon-accent': '#fff4b8',
+  },
+  twos: {
+    '--category-icon-bg': 'linear-gradient(145deg, #e9fff7, #5ae3c2 56%, #0e92d9)',
+    '--category-icon-color': '#0070b8',
+    '--category-icon-glow': 'rgba(44, 210, 202, 0.36)',
+    '--category-icon-accent': '#bfffea',
+  },
+  threes: {
+    '--category-icon-bg': 'linear-gradient(145deg, #fff3fb, #ff9fd3 54%, #7b64ff)',
+    '--category-icon-color': '#6733d8',
+    '--category-icon-glow': 'rgba(255, 111, 197, 0.34)',
+    '--category-icon-accent': '#ffe3f4',
+  },
+  fours: {
+    '--category-icon-bg': 'linear-gradient(145deg, #fff7dd, #ffc34f 55%, #f07922)',
+    '--category-icon-color': '#a84c00',
+    '--category-icon-glow': 'rgba(255, 176, 42, 0.38)',
+    '--category-icon-accent': '#fff0b8',
+  },
+  fives: {
+    '--category-icon-bg': 'linear-gradient(145deg, #efffed, #77df73 54%, #10a95b)',
+    '--category-icon-color': '#08793e',
+    '--category-icon-glow': 'rgba(74, 214, 101, 0.36)',
+    '--category-icon-accent': '#d8ffd4',
+  },
+  sixes: {
+    '--category-icon-bg': 'linear-gradient(145deg, #eef6ff, #88bfff 54%, #3357e8)',
+    '--category-icon-color': '#143fbb',
+    '--category-icon-glow': 'rgba(66, 117, 255, 0.36)',
+    '--category-icon-accent': '#dcecff',
+  },
+  threeOfAKind: {
+    '--category-icon-bg': 'linear-gradient(145deg, #edfbff, #5bdcff 52%, #195de8)',
+    '--category-icon-color': '#ffffff',
+    '--category-icon-glow': 'rgba(63, 191, 255, 0.4)',
+    '--category-icon-accent': '#c9f6ff',
+  },
+  fourOfAKind: {
+    '--category-icon-bg': 'linear-gradient(145deg, #fff3bf, #ffb72d 52%, #ec6b18)',
+    '--category-icon-color': '#ffffff',
+    '--category-icon-glow': 'rgba(255, 171, 35, 0.46)',
+    '--category-icon-accent': '#fff1a8',
+  },
+  fullHouse: {
+    '--category-icon-bg': 'linear-gradient(145deg, #fff0f5, #ff88bd 52%, #d72f86)',
+    '--category-icon-color': '#ffffff',
+    '--category-icon-glow': 'rgba(255, 105, 174, 0.42)',
+    '--category-icon-accent': '#ffd8ea',
+  },
+  smallStraight: {
+    '--category-icon-bg': 'linear-gradient(145deg, #e7fff5, #4eddb9 52%, #008fd2)',
+    '--category-icon-color': '#ffffff',
+    '--category-icon-glow': 'rgba(55, 211, 185, 0.4)',
+    '--category-icon-accent': '#c8fff0',
+  },
+  largeStraight: {
+    '--category-icon-bg': 'linear-gradient(145deg, #eef4ff, #8aa9ff 52%, #4451d9)',
+    '--category-icon-color': '#ffffff',
+    '--category-icon-glow': 'rgba(104, 133, 255, 0.42)',
+    '--category-icon-accent': '#d9e2ff',
+  },
+  yacht: {
+    '--category-icon-bg': 'linear-gradient(145deg, #eaffff, #66ddff 48%, #1474dc 76%)',
+    '--category-icon-color': '#ffffff',
+    '--category-icon-glow': 'rgba(91, 218, 255, 0.5)',
+    '--category-icon-accent': '#f2fdff',
+  },
+  chance: {
+    '--category-icon-bg': 'linear-gradient(145deg, #fff7ce, #c58cff 48%, #5c4dea)',
+    '--category-icon-color': '#ffffff',
+    '--category-icon-glow': 'rgba(168, 103, 255, 0.42)',
+    '--category-icon-accent': '#fff0a8',
+  },
+};
+
+function CategoryIcon({ category }: { category: ScoreCategory }) {
+  const diceValue = categoryDiceValueMap[category];
+  const iconStyle = categoryIconThemeMap[category];
+
+  if (diceValue) {
+    return (
+      <span className={`${styles.categoryIcon} ${styles.categoryIconDice}`} style={iconStyle} aria-hidden="true">
+        <span className={styles.categoryDiceFace}>
+          {getDiceDots(diceValue).map((isVisible, index) => (
+            <span
+              key={index}
+              className={`${styles.categoryDicePip} ${isVisible ? styles.categoryDicePipVisible : ''}`}
+            />
+          ))}
+        </span>
+      </span>
+    );
+  }
+
+  const Icon = categoryIconMap[category] ?? Dices;
+
+  return (
+    <span className={styles.categoryIcon} style={iconStyle} aria-hidden="true">
+      <Icon className={styles.categorySvgIcon} size={18} strokeWidth={3} />
+    </span>
+  );
 }
 
 function PlayerCard({ player, isActive }: { player: GamePlayer; isActive?: boolean }) {
@@ -265,7 +388,10 @@ export default function GamePage() {
     gameId: null,
     playerId: null,
     difficulty: null,
+    pendingCreate: false,
   });
+  const [isQueryReady, setIsQueryReady] = useState(false);
+  const [entryGameCreateError, setEntryGameCreateError] = useState<string | null>(null);
   const [serverGameStatus, setServerGameStatus] = useState<GameStatusSnapshot | null>(null);
   const [isResultOpen, setIsResultOpen] = useState(false);
   const [isRulesOpen, setIsRulesOpen] = useState(false);
@@ -288,8 +414,10 @@ export default function GamePage() {
   const [isSettlementLoading, setIsSettlementLoading] = useState(false);
   const [settlementResultData, setSettlementResultData] = useState<GameResultData | null>(null);
   const [resultActionError, setResultActionError] = useState<string | null>(null);
+  const serverGameStatusRef = useRef<GameStatusSnapshot | null>(null);
   const rollingGuardRef = useRef(false);
   const scoreSubmittingGuardRef = useRef(false);
+  const entryCreateGuardRef = useRef(false);
   const reportedWinnerGameIdRef = useRef<string | null>(null);
   const { soundEnabled: isSoundEnabled, setSoundEnabled: setIsSoundEnabled } = useHomeSoundSetting(
     player?.id,
@@ -304,7 +432,34 @@ export default function GamePage() {
       gameId: params.get('gameId'),
       playerId: params.get('playerId'),
       difficulty: params.get('difficulty'),
+      pendingCreate: params.get('pendingCreate') === '1',
     });
+    setIsQueryReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return undefined;
+
+    const triggerYachtEffect = () => {
+      setYachtEffectKey(Date.now());
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('debugYachtEffect') === '1') {
+      window.setTimeout(triggerYachtEffect, 600);
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.shiftKey && event.key.toLowerCase() === 'y') {
+        triggerYachtEffect();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const applyScoreLockStatus = useCallback((lockStatus: ScoreLockStatusSnapshot) => {
@@ -342,12 +497,13 @@ export default function GamePage() {
   const isServerGame = Boolean(queryState.gameId);
   const isAiTurn = Boolean(syncedActivePlayer?.isAi);
   const canOperateCurrentTurn =
-    !isServerGame || Boolean(serverGameStatus && activePlayerId === selfPlayerId && !isAiTurn);
+    isServerGame && Boolean(serverGameStatus && activePlayerId === selfPlayerId && !isAiTurn);
   const waitingTurnLabel = isAiTurn ? '机器人思考中' : '等待其他玩家';
   const panelSelfPlayer = scorePanelPlayerById[selfPlayerId];
   const panelActivePlayer = scorePanelPlayerById[activePlayerId];
   const selfPlayerName = panelSelfPlayer?.username ?? syncedSelfPlayer?.name ?? player?.name ?? '乐乐玩家';
   const activePlayerName = panelActivePlayer?.username ?? syncedActivePlayer?.name ?? selfPlayerName;
+  const isCreatingEntryGame = isQueryReady && queryState.pendingCreate && !queryState.gameId && !entryGameCreateError;
   const isSingleMode = isLocalMode && !queryState.roomId;
   const isRoomGame = Boolean(queryState.roomId && currentRoom);
   const showChat = isRoomGame || mode === 'online';
@@ -476,22 +632,39 @@ export default function GamePage() {
     const currentSnapshot = status.players.find(item => item.playerId === status.currentPlayer) ?? status.players[0];
     const nextCompletedCategories = Object.keys(currentSnapshot?.scores ?? {}) as ScoreCategory[];
 
+    const previousCurrentPlayer = serverGameStatusRef.current?.currentPlayer;
+    serverGameStatusRef.current = status;
+
     setServerGameStatus(status);
     setDice(status.dice);
-    setLocked(status.diceLocked.length === initialLocked.length ? status.diceLocked : initialLocked);
+    setLocked(currentLocked =>
+      resolveSyncedLockedDiceState(
+        status.diceLocked,
+        currentLocked,
+        status.rollsLeft,
+        status.currentPlayer,
+        previousCurrentPlayer
+      )
+    );
     setRollsLeft(status.rollsLeft);
     setPlayerScores(currentSnapshot?.scores ?? {});
     setCompletedCategories(nextCompletedCategories);
     setUnlockedScoreCategories(
       SCORE_CATEGORIES.map(item => item.category).filter(category => !nextCompletedCategories.includes(category))
     );
-    setPossibleScores({});
+    setPossibleScores(currentPossibleScores =>
+      status.currentPlayer === selfPlayerId &&
+      status.rollsLeft < MAX_ROLLS_PER_TURN &&
+      status.status !== 'finished'
+        ? currentPossibleScores
+        : {}
+    );
 
     return {
       currentSnapshot,
       nextCompletedCategories,
     };
-  }, []);
+  }, [selfPlayerId]);
 
   const gameResultData = useMemo<GameResultData>(() => {
     const resultPlayers = players.map((item, index) => ({
@@ -663,6 +836,54 @@ export default function GamePage() {
   const scoreTableStyle = { '--score-columns': scoreColumns } as CSSProperties;
 
   useEffect(() => {
+    if (!isQueryReady || !queryState.pendingCreate || queryState.gameId || entryCreateGuardRef.current) return;
+
+    const gameMode = isApiGameMode(queryState.mode) ? queryState.mode : 'local';
+    const playerNames = gameMode === 'ai' ? [selfPlayerName, 'AI机器人'] : [selfPlayerName];
+
+    entryCreateGuardRef.current = true;
+    setEntryGameCreateError(null);
+
+    createGame({
+      game_mode: gameMode,
+      player_names: playerNames,
+    })
+      .then(game => {
+        const params = new URLSearchParams({
+          mode: gameMode,
+          gameId: game.gameId,
+          playerId: game.playerId,
+        });
+
+        if (queryState.difficulty) params.set('difficulty', queryState.difficulty);
+        if (queryState.roomId) params.set('roomId', queryState.roomId);
+
+        setQueryState({
+          mode: gameMode,
+          roomId: queryState.roomId,
+          gameId: game.gameId,
+          playerId: game.playerId,
+          difficulty: queryState.difficulty,
+          pendingCreate: false,
+        });
+        router.replace(`/game?${params.toString()}`);
+      })
+      .catch(error => {
+        entryCreateGuardRef.current = false;
+        setEntryGameCreateError(error instanceof Error ? error.message : '游戏创建失败，请稍后再试');
+      });
+  }, [
+    isQueryReady,
+    queryState.difficulty,
+    queryState.gameId,
+    queryState.mode,
+    queryState.pendingCreate,
+    queryState.roomId,
+    router,
+    selfPlayerName,
+  ]);
+
+  useEffect(() => {
     if (isSingleMode) setGameEvents(defaultGameEvents);
   }, [isSingleMode]);
 
@@ -681,7 +902,7 @@ export default function GamePage() {
         await refreshScoreBoard(
           gameId,
           status.currentPlayer ?? selfPlayerId,
-          status.rollsLeft < MAX_ROLLS_PER_TURN
+          status.currentPlayer === selfPlayerId && status.rollsLeft < MAX_ROLLS_PER_TURN
         );
       })
       .catch(error => {
@@ -704,7 +925,7 @@ export default function GamePage() {
       void refreshScoreBoard(
         gameId,
         status.currentPlayer ?? selfPlayerId,
-        status.rollsLeft < MAX_ROLLS_PER_TURN
+        status.currentPlayer === selfPlayerId && status.rollsLeft < MAX_ROLLS_PER_TURN
       ).catch(error => {
         console.error(error);
       });
@@ -733,7 +954,7 @@ export default function GamePage() {
         void refreshScoreBoard(
           gameId,
           status.currentPlayer ?? selfPlayerId,
-          status.rollsLeft < MAX_ROLLS_PER_TURN
+          status.currentPlayer === selfPlayerId && status.rollsLeft < MAX_ROLLS_PER_TURN
         ).catch(error => {
           console.error(error);
         });
@@ -762,7 +983,14 @@ export default function GamePage() {
 
       try {
         const status = await getGameStatus(gameId);
-        if (!isCancelled) applyGameStatusSnapshot(status);
+        if (!isCancelled) {
+          applyGameStatusSnapshot(status);
+          await refreshScoreBoard(
+            gameId,
+            status.currentPlayer ?? selfPlayerId,
+            status.currentPlayer === selfPlayerId && status.rollsLeft < MAX_ROLLS_PER_TURN
+          );
+        }
       } catch (error) {
         if (!isCancelled) console.error(error);
       } finally {
@@ -784,7 +1012,7 @@ export default function GamePage() {
       if (syncTimer) window.clearInterval(syncTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [applyGameStatusSnapshot, isResultOpen, queryState.gameId]);
+  }, [applyGameStatusSnapshot, isResultOpen, queryState.gameId, refreshScoreBoard, selfPlayerId]);
 
   useEffect(() => {
     if (!isServerGameFinished || isResultOpen) return;
@@ -827,15 +1055,18 @@ export default function GamePage() {
 
   useEffect(() => {
     const gameId = queryState.gameId;
-    const currentPlayerId = toOptionalBackendPlayerId(selfPlayerId);
+    const currentGamePlayerId = toOptionalBackendPlayerId(selfPlayerId);
+    const currentUserId = player?.id ? toOptionalBackendPlayerId(player.id) : null;
+    const gameMode = isApiGameMode(queryState.mode) ? queryState.mode : 'local';
     const winner = settlementResultData?.players.find(item => item.rank === 1);
 
     if (
       !isResultOpen ||
       !gameId ||
       !winner ||
-      currentPlayerId === null ||
-      winner.id !== currentPlayerId ||
+      currentGamePlayerId === null ||
+      currentUserId === null ||
+      winner.id !== currentGamePlayerId ||
       reportedWinnerGameIdRef.current === gameId
     ) {
       return;
@@ -843,20 +1074,19 @@ export default function GamePage() {
 
     reportedWinnerGameIdRef.current = gameId;
 
-    void updateLeaderboardWins(winner.id).catch(error => {
-      console.error('[updateLeaderboardWins] 更新胜利次数失败:', error);
+    void Promise.all([
+      updateLeaderboardWins(currentUserId, gameMode),
+      updateLeaderboardGames(currentUserId, gameMode),
+    ]).catch(error => {
+      console.error('[updateLeaderboard] 更新排行榜数据失败:', error);
     });
-  }, [isResultOpen, queryState.gameId, selfPlayerId, settlementResultData]);
+  }, [isResultOpen, player?.id, queryState.gameId, queryState.mode, selfPlayerId, settlementResultData]);
 
-  const toggleDieLock = async (index: number) => {
+  const toggleDieLock = (index: number) => {
     if (!canOperateCurrentTurn || rollsLeft >= MAX_ROLLS_PER_TURN || isRolling) return;
 
     const nextLocked = locked.map((value, valueIndex) => (valueIndex === index ? !value : value));
     setLocked(nextLocked);
-
-    if (!queryState.gameId) {
-      await mockSyncLockedDice({ roomId, playerId: activePlayerId, dice, locked: nextLocked });
-    }
 
     setServerGameStatus(current => (current ? { ...current, diceLocked: nextLocked } : current));
   };
@@ -869,45 +1099,40 @@ export default function GamePage() {
   };
 
   const handleRollDice = async () => {
-    if (!canOperateCurrentTurn || rollingGuardRef.current || isRolling || rollsLeft <= 0) return;
+    if (!canOperateCurrentTurn || !queryState.gameId || rollingGuardRef.current || isRolling || rollsLeft <= 0) return;
 
     rollingGuardRef.current = true;
     setIsRolling(true);
 
     try {
-      const rollPromise = queryState.gameId
-        ? rollGameDice(queryState.gameId, {
-            player_id: selfPlayerId,
-            locked_dice: locked,
-          })
-        : mockRollDice({ roomId, playerId: activePlayerId, dice, locked }).then(nextDice => ({
-            dice: nextDice,
-            diceLocked: locked,
-            rollsLeft: rollsLeft - 1,
-          }));
+      const rollPromise = rollGameDice(queryState.gameId, {
+        player_id: selfPlayerId,
+        locked_dice: locked,
+      });
       const [rollResult] = await Promise.all([rollPromise, delay(DICE_THROW_ANIMATION_MS)]);
       const nextDice = rollResult.dice;
       const nextLocked =
         rollResult.diceLocked && rollResult.diceLocked.length === initialLocked.length ? rollResult.diceLocked : locked;
       const nextRollsLeft = rollResult.rollsLeft;
-      const nextPossibleScores = queryState.gameId ? await getPossibleScoreSnapshot(queryState.gameId) : {};
+      const nextPossibleScores = await getPossibleScoreSnapshot(queryState.gameId).catch(error => {
+        console.error(error);
+        return {};
+      });
 
       setDice(nextDice);
       setLocked(nextLocked);
       setRollsLeft(nextRollsLeft);
       setPossibleScores(nextPossibleScores);
-      if (queryState.gameId) {
-        setServerGameStatus(current =>
-          current
-            ? {
-                ...current,
-                dice: nextDice,
-                diceLocked: nextLocked,
-                rollsLeft: nextRollsLeft,
-              }
-            : current
-        );
-      }
+      setServerGameStatus(current =>
+        current
+          ? {
+              ...current,
+              dice: nextDice,
+              diceLocked: nextLocked,
+              rollsLeft: nextRollsLeft,
+            }
+          : current
+      );
     } catch (error) {
       console.error(error);
     } finally {
@@ -1047,6 +1272,20 @@ export default function GamePage() {
         backgroundImage={gameBackground.src}
       >
         <YachtScoreEffect triggerKey={yachtEffectKey} />
+        {(isCreatingEntryGame || entryGameCreateError) && (
+          <section className={styles.entryLoadingOverlay} aria-live="polite" aria-busy={isCreatingEntryGame}>
+            <div className={styles.entryLoadingPanel}>
+              <Dice5 size={48} />
+              <h1>{entryGameCreateError ? '创建对局失败' : '正在创建对局'}</h1>
+              <p>{entryGameCreateError ?? '正在连接后端并准备棋盘，请稍候。'}</p>
+              {entryGameCreateError && (
+                <button type="button" onClick={() => router.push('/')}>
+                  返回大厅
+                </button>
+              )}
+            </div>
+          </section>
+        )}
         <header className={styles.topLayer}>
           <Link className={styles.logoArea} href="/" aria-label="返回投骰乐园首页">
             <span className={styles.logoDice}>D6</span>
@@ -1078,10 +1317,6 @@ export default function GamePage() {
             </button>
           </nav>
 
-          <Link className={styles.backLobbyButton} href="/">
-            <ArrowLeft size={23} />
-            返回大厅
-          </Link>
         </header>
 
         <aside className={styles.playerPanel} aria-label="玩家列表">
@@ -1187,7 +1422,7 @@ export default function GamePage() {
                       <span className={styles.sectionBadge}>{index <= 5 ? '上层' : '下层'}</span>
                     )}
                     <strong>
-                      <span>{getCategoryIcon(category)}</span>
+                      <CategoryIcon category={category} />
                       {row.nameZh}
                     </strong>
                     <small>（{getCategoryHint(category)}）</small>
