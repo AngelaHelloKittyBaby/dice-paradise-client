@@ -1,8 +1,9 @@
 ﻿'use client';
 
-import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import Image, { type StaticImageData } from 'next/image';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -15,6 +16,7 @@ import {
   Gift,
   Home,
   LogIn,
+  LogOut,
   Palette,
   PlusCircle,
   Rocket,
@@ -37,14 +39,28 @@ import aiBattlePanelImage from '@/assets/images/ui/panels/Player vs AI.png';
 import deepseekImage from '@/assets/images/ui/panels/deepseek.png';
 import doubaoImage from '@/assets/images/ui/panels/doubao.png';
 import kimiImage from '@/assets/images/ui/panels/kimi.png';
-import { LobbyAmbientEffects, ResponsiveStage } from '@/components/layout';
-import { GameChat, SoundToggle, StarIcon, type GameChatMessage } from '@/components/ui';
-import { JoinRoomModal, RoomHallModal } from '@/components/game';
+import { ResponsiveStage } from '@/components/layout';
+import { GameChat, LoadingImage, SoundToggle, StarIcon, type GameChatMessage } from '@/components/ui';
 import { useHomePoints, useHomeSoundSetting } from '@/hooks';
 import { getRoomApiErrorMessage } from '@/modules/room/roomApi';
 import { usePlayerStore, useRoomStore } from '@/stores';
 import type { ApiGameMode } from '@/types/gameApi';
 import styles from './home-lobby.module.css';
+
+const LobbyAmbientEffects = dynamic(
+  () => import('@/components/layout/LobbyAmbientEffects').then(module => module.LobbyAmbientEffects),
+  { ssr: false }
+);
+
+const RoomHallModal = dynamic(
+  () => import('@/components/game/RoomHallModal').then(module => module.RoomHallModal),
+  { ssr: false }
+);
+
+const JoinRoomModal = dynamic(
+  () => import('@/components/game/JoinRoomModal').then(module => module.JoinRoomModal),
+  { ssr: false }
+);
 
 interface ActionCard {
   title: string;
@@ -58,7 +74,7 @@ interface ActionCard {
   createsRoom?: boolean;
 }
 
-type AiDifficulty = 'normal' | 'easy' | 'hard';
+type AiDifficulty = 'easy' | 'medium' | 'hard';
 type RoomDialogMode = 'choose' | 'join';
 
 const roomNumberLabel = 'Room ID'.split('');
@@ -140,7 +156,7 @@ const aiDifficultyOptions: AiDifficultyOption[] = [
     stars: 1,
   },
   {
-    value: 'normal',
+    value: 'medium',
     title: 'Kimi',
     badge: '普通',
     description: '实力均衡，策略为王',
@@ -230,6 +246,7 @@ export default function HomePage() {
   const player = usePlayerStore(state => state.player);
   const isLoggedIn = usePlayerStore(state => state.isLoggedIn);
   const authToken = usePlayerStore(state => state.authToken);
+  const logout = usePlayerStore(state => state.logout);
   const soundSettingFallback = usePlayerStore(state => state.settings.soundEnabled);
   const createRoom = useRoomStore(state => state.createRoom);
   const currentRoom = useRoomStore(state => state.currentRoom);
@@ -262,20 +279,25 @@ export default function HomePage() {
   const playerAvatar = hasUserSession && player?.avatar ? player.avatar : defaultAvatar.src;
 
   useEffect(() => {
-    router.prefetch('/game');
-    router.prefetch('/room');
-    router.prefetch('/activity');
-    router.prefetch('/leaderboard');
-    router.prefetch('/profile');
+    const prefetchTimer = window.setTimeout(() => {
+      router.prefetch('/game');
+      router.prefetch('/room');
+    }, 900);
+
+    return () => window.clearTimeout(prefetchTimer);
   }, [router]);
 
   useEffect(() => {
     if (!hasUserSession || currentRoom) return;
 
     void restoreCurrentRoom().catch(error => {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+
+      if (isRoomNotFoundErrorMessage(message)) return;
+
       console.warn(
         '[restoreCurrentRoom] 当前房间恢复暂时不可用，继续进入大厅:',
-        error instanceof Error ? error.message : 'Unknown error'
+        message
       );
     });
   }, [currentRoom, hasUserSession, restoreCurrentRoom]);
@@ -289,19 +311,17 @@ export default function HomePage() {
     setIsAuthPromptOpen(true);
   };
 
-  const handlePlayerProfileKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-
-    event.preventDefault();
-    handlePlayerProfileClick();
-  };
-
   const handleAuthPromptLogin = () => {
     router.push('/login?mode=login');
   };
 
   const handleAuthPromptRegister = () => {
     router.push('/login?mode=register');
+  };
+
+  const handleLogout = () => {
+    logout();
+    router.replace('/login?mode=login');
   };
 
   const enterPendingGame = (gameMode: ApiGameMode, extraParams: Record<string, string> = {}) => {
@@ -319,7 +339,16 @@ export default function HomePage() {
     router.push(`/game?${params.toString()}`);
   };
 
+  const prefetchActionRoute = (href: string) => {
+    router.prefetch(href.split('?')[0]);
+  };
+
   const handleLocalGameStart = () => {
+    if (!hasUserSession) {
+      setIsAuthPromptOpen(true);
+      return;
+    }
+
     enterPendingGame('local');
   };
 
@@ -484,35 +513,47 @@ export default function HomePage() {
       <header className={styles.lobbyHeader}>
         <section
           className={styles.playerProfile}
-          aria-label="用户信息栏，点击打开个人中心"
-          role="button"
-          tabIndex={0}
-          onClick={handlePlayerProfileClick}
-          onKeyDown={handlePlayerProfileKeyDown}
+          aria-label="用户信息栏"
         >
-          <span
-            className={styles.avatarSlot}
-            aria-label={`${playerName}澶村儚`}
-            style={{ backgroundImage: `url(${playerAvatar})` }}
-          />
-          <div className={styles.playerInfo}>
-            <div className={styles.playerNameRow}>
-              <h1 className={styles.playerName}>{playerName}</h1>
-              <div className={styles.vipBadgeSlot} aria-label="VIP 等级标识">
-                VIP4
+          <button
+            className={styles.playerProfileMain}
+            type="button"
+            aria-label="打开个人中心"
+            onClick={handlePlayerProfileClick}
+          >
+            <span
+              className={styles.avatarSlot}
+              aria-label={`${playerName}澶村儚`}
+              style={{ backgroundImage: `url(${playerAvatar})` }}
+            />
+            <div className={styles.playerInfo}>
+              <div className={styles.playerNameRow}>
+                <h1 className={styles.playerName}>{playerName}</h1>
+                <div className={styles.vipBadgeSlot} aria-label="VIP 等级标识">
+                  VIP4
+                </div>
+              </div>
+              <div className={styles.playerMeta}>
+                <span>Lv.{playerLevel}</span>
+                <span className={styles.playerStars}>
+                  <StarIcon size={15} />
+                  {homePoints.toLocaleString()}
+                </span>
+              </div>
+              <div className={styles.levelTrack} aria-hidden="true">
+                <span style={{ width: '62%' }} />
               </div>
             </div>
-            <div className={styles.playerMeta}>
-              <span>Lv.{playerLevel}</span>
-              <span className={styles.playerStars}>
-                <StarIcon size={15} />
-                {homePoints.toLocaleString()}
-              </span>
-            </div>
-            <div className={styles.levelTrack} aria-hidden="true">
-              <span style={{ width: '62%' }} />
-            </div>
-          </div>
+          </button>
+          <button
+            className={styles.logoutButton}
+            type="button"
+            aria-label="退出登录"
+            onClick={handleLogout}
+          >
+            <LogOut size={17} strokeWidth={3} />
+            退出
+          </button>
         </section>
 
         <div className={styles.headerNotice}>
@@ -584,7 +625,7 @@ export default function HomePage() {
             aria-labelledby="ai-mode-title"
             onClick={event => event.stopPropagation()}
           >
-            <Image src={aiBattlePanelImage} alt="" fill sizes="1260px" className={styles.aiBattlePanelImage} priority />
+            <Image src={aiBattlePanelImage} alt="" fill sizes="1260px" className={styles.aiBattlePanelImage} />
             <h2 id="ai-mode-title" className={styles.aiBattleTitle}>人机对战</h2>
             <p className={styles.aiBattleSubtitle}>选择你的AI对手，开始挑战吧！</p>
 
@@ -609,7 +650,7 @@ export default function HomePage() {
                   >
                     <span className={styles.aiBattleBadge}>{option.badge}</span>
                     <span className={styles.aiBattlePortrait}>
-                      <Image src={option.image} alt="" fill sizes="330px" className={styles.aiBattlePortraitImage} priority />
+                      <Image src={option.image} alt="" fill sizes="330px" className={styles.aiBattlePortraitImage} />
                     </span>
                     <span className={styles.aiBattleInfo}>
                       <strong>{option.title}</strong>
@@ -632,29 +673,33 @@ export default function HomePage() {
           </section>
         </div>
       )}
-      <RoomHallModal
-        isOpen={isRoomHallOpen}
-        onClose={closeRoomModeDialog}
-        onCreateRoom={handleCreateRoom}
-        onJoinRoom={handleRoomHallJoin}
-        isLoading={isCreatingRoom || isJoiningRoom}
-        waitingRoomCount={roomList.length}
-      />
+      {isRoomHallOpen && (
+        <RoomHallModal
+          isOpen={isRoomHallOpen}
+          onClose={closeRoomModeDialog}
+          onCreateRoom={handleCreateRoom}
+          onJoinRoom={handleRoomHallJoin}
+          isLoading={isCreatingRoom || isJoiningRoom}
+          waitingRoomCount={roomList.length}
+        />
+      )}
 
-      <JoinRoomModal
-        isOpen={isJoinRoomModalOpen}
-        joinRoomCode={joinRoomCode}
-        roomNumberLabel={roomNumberLabel}
-        isLoading={isJoiningRoom}
-        isRoomListLoading={isFetchingRoomList}
-        error={gameCreateError}
-        rooms={roomList}
-        onRoomCodeChange={setJoinRoomCode}
-        onClose={closeRoomModeDialog}
-        onSubmit={handleJoinRoom}
-        onJoinRoom={handleJoinWaitingRoom}
-        onRefreshRooms={() => void refreshWaitingRoomList()}
-      />
+      {isJoinRoomModalOpen && (
+        <JoinRoomModal
+          isOpen={isJoinRoomModalOpen}
+          joinRoomCode={joinRoomCode}
+          roomNumberLabel={roomNumberLabel}
+          isLoading={isJoiningRoom}
+          isRoomListLoading={isFetchingRoomList}
+          error={gameCreateError}
+          rooms={roomList}
+          onRoomCodeChange={setJoinRoomCode}
+          onClose={closeRoomModeDialog}
+          onSubmit={handleJoinRoom}
+          onJoinRoom={handleJoinWaitingRoom}
+          onRefreshRooms={() => void refreshWaitingRoomList()}
+        />
+      )}
 
       {isRoomModeOpen && (
         <div className={styles.roomModeOverlay} role="presentation">
@@ -840,12 +885,15 @@ export default function HomePage() {
                 aria-haspopup={card.opensAiMode ? 'dialog' : undefined}
                 aria-expanded={card.opensAiMode ? isAiModeOpen : undefined}
                 disabled={Boolean(creatingGameMode || isCreatingRoom || isJoiningRoom)}
+                onMouseEnter={() => prefetchActionRoute(card.opensAiMode ? '/game' : card.href)}
+                onFocus={() => prefetchActionRoute(card.opensAiMode ? '/game' : card.href)}
                 onClick={card.opensAiMode ? () => setIsAiModeOpen(true) : card.createsRoom ? openRoomModeDialog : handleLocalGameStart}
               >
                 {isCreatingThisMode ? (
                   <>
                     <span className={styles.primaryTag}>创建中</span>
                     <div className={styles.actionCopy}>
+                      <LoadingImage size="sm" className={styles.actionLoadingImage} />
                       <h2>{card.title}</h2>
                       <p>{card.createsRoom ? '正在创建房间' : '正在创建对局'}</p>
                     </div>

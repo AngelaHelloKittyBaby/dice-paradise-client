@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { GameResultModal } from '@/components/game';
 import { PageContainer } from '@/components/layout';
+import { Loading } from '@/components/ui';
 import { useAuth } from '@/hooks';
 import {
   backToLobbySettlementGame,
@@ -142,12 +143,16 @@ export default function ResultPage() {
     return (
       <PageContainer title="游戏结束" showBack player={player}>
         <div className="flex min-h-[60vh] flex-1 items-center justify-center">
-          <div className="text-center">
-            <p className="text-gray-500">{isLoading ? '结算数据加载中...' : actionError ?? '暂无可用结算数据'}</p>
-            <Link href="/" className="mt-4 inline-block text-primary-600 hover:underline">
-              返回首页
-            </Link>
-          </div>
+          {isLoading ? (
+            <Loading size="lg" text="结算数据加载中..." />
+          ) : (
+            <div className="text-center">
+              <p className="text-gray-500">{actionError ?? '暂无可用结算数据'}</p>
+              <Link href="/" className="mt-4 inline-block text-primary-600 hover:underline">
+                返回首页
+              </Link>
+            </div>
+          )}
         </div>
       </PageContainer>
     );

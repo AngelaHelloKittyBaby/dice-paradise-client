@@ -4,8 +4,6 @@ import type { Room } from './room';
 export type ApiRoomPlayerId = string | number;
 
 export interface CreateOnlineRoomRequest {
-  client_id: string;
-  player_name: string;
   room_name?: string | null;
   max_players?: number;
   game_mode?: ApiGameMode;
@@ -41,6 +39,8 @@ export interface ApiRoomData {
   owner_id?: ApiRoomPlayerId | null;
   creatorId?: ApiRoomPlayerId | null;
   creator_id?: ApiRoomPlayerId | null;
+  gameId?: string | number | null;
+  game_id?: string | number | null;
 }
 
 export interface ApiRoomListItem {
@@ -56,9 +56,7 @@ export interface RoomListResponseData {
 }
 
 export interface JoinOnlineRoomRequest {
-  client_id: string;
   room_code: string;
-  player_name: string;
 }
 
 export interface JoinOnlineRoomData {

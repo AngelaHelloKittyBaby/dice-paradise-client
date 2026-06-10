@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { API_BASE_URL } from '@/config/api';
 import { createApiClient } from '@/modules/api/createApiClient';
 import type { Player, PlayerStats } from '@/types/player';
 import type {
@@ -30,6 +31,21 @@ export class AuthApiError extends Error {
 }
 
 const apiClient = createApiClient();
+const AUTH_TOKEN_VERIFY_PATH = '/auth/me';
+const AUTH_TOKEN_VERIFY_TIMEOUT_MS = 8_000;
+
+function getAuthorizationHeader(token: string, tokenType?: string | null) {
+  const normalizedTokenType = tokenType?.trim();
+  const authorizationType = normalizedTokenType
+    ? `${normalizedTokenType.charAt(0).toUpperCase()}${normalizedTokenType.slice(1)}`
+    : 'Bearer';
+
+  return `${authorizationType} ${token}`;
+}
+
+export function isInvalidAuthTokenError(error: unknown) {
+  return error instanceof AuthApiError && (error.status === 401 || error.status === 403);
+}
 
 function normalizeNumber(value: number | null | undefined) {
   return Number.isFinite(value) ? Number(value) : 0;
@@ -112,6 +128,25 @@ export async function loginWithNickname(request: { nickname: string; password: s
     return normalizeAuthSession(response.data);
   } catch (error) {
     throw toAuthApiError(error, '登录失败，请稍后重试');
+  }
+}
+
+export async function verifyAuthToken(request: { token: string; tokenType?: string | null }): Promise<void> {
+  const normalizedToken = request.token.trim();
+
+  if (!normalizedToken) {
+    throw new AuthApiError('Missing auth token', 401);
+  }
+
+  try {
+    await axios.get(`${API_BASE_URL}${AUTH_TOKEN_VERIFY_PATH}`, {
+      headers: {
+        Authorization: getAuthorizationHeader(normalizedToken, request.tokenType),
+      },
+      timeout: AUTH_TOKEN_VERIFY_TIMEOUT_MS,
+    });
+  } catch (error) {
+    throw toAuthApiError(error, 'Token validation failed');
   }
 }
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import {
   Bot,
@@ -19,12 +20,12 @@ import {
   Waves,
   type LucideIcon,
 } from 'lucide-react';
-import { GameResultModal, GameRulesModal, YachtScoreEffect } from '@/components/game';
 import { ResponsiveStage } from '@/components/layout';
-import { GameChat, SoundToggle, StarIcon, type GameChatMessage } from '@/components/ui';
+import { GameChat, LoadingImage, SoundToggle, StarIcon, type GameChatMessage } from '@/components/ui';
 import { CATEGORY_NAMES, LOWER_CATEGORIES, MAX_ROLLS_PER_TURN, SCORE_CATEGORIES } from '@/constants/gameRules';
 import gameBackground from '@/assets/images/backgrounds/game/game-bg.png';
 import { useGameSocket, useHomePoints, useHomeSoundSetting } from '@/hooks';
+import { playDiceRollSound } from '@/modules/audio/audioEvents';
 import {
   createGame,
   getGameStatus,
@@ -49,7 +50,23 @@ import {
   calculateUpperBonus,
   calculateUpperSubtotal,
 } from '@/utils/scoreCalculator';
+import { getOrCreateClientId } from '@/utils/clientId';
 import styles from './game.module.css';
+
+const GameResultModal = dynamic(
+  () => import('@/components/game/GameResultModal').then(module => module.GameResultModal),
+  { ssr: false }
+);
+
+const GameRulesModal = dynamic(
+  () => import('@/components/game/GameRulesModal').then(module => module.GameRulesModal),
+  { ssr: false }
+);
+
+const YachtScoreEffect = dynamic(
+  () => import('@/components/game/YachtScoreEffect').then(module => module.YachtScoreEffect),
+  { ssr: false }
+);
 
 interface GamePlayer {
   id: string;
@@ -125,12 +142,32 @@ function hasCompletedAllScoreCategories(scores: Partial<Record<ScoreCategory, nu
   return SCORE_CATEGORIES.every(item => scores[item.category] !== undefined);
 }
 
+function getCommittedScores(
+  scores: Partial<Record<ScoreCategory, number>>,
+  totalScore: number,
+  status: GameStatusSnapshot['status']
+): Partial<Record<ScoreCategory, number>> {
+  const filledCategoryCount = SCORE_CATEGORIES.filter(item => scores[item.category] !== undefined).length;
+
+  if (status !== 'finished' && totalScore === 0 && filledCategoryCount >= SCORE_CATEGORIES.length) {
+    return {};
+  }
+
+  return scores;
+}
+
+function hasRolledDiceThisTurn(rollsLeft: number) {
+  return rollsLeft < MAX_ROLLS_PER_TURN;
+}
+
 function hasFinishedGame(status: GameStatusSnapshot | null) {
   if (!status) return false;
 
   return status.status === 'finished' || (
     status.players.length > 0 &&
-    status.players.every(item => hasCompletedAllScoreCategories(item.scores))
+    status.players.every(item =>
+      hasCompletedAllScoreCategories(getCommittedScores(item.scores, item.totalScore, status.status))
+    )
   );
 }
 
@@ -379,6 +416,7 @@ function DiceFace({
 export default function GamePage() {
   const router = useRouter();
   const player = usePlayerStore(state => state.player);
+  const authToken = usePlayerStore(state => state.authToken);
   const soundSettingFallback = usePlayerStore(state => state.settings.soundEnabled);
   const currentRoom = useRoomStore(state => state.currentRoom);
   const setCurrentRoom = useRoomStore(state => state.setCurrentRoom);
@@ -463,16 +501,16 @@ export default function GamePage() {
   }, []);
 
   const applyScoreLockStatus = useCallback((lockStatus: ScoreLockStatusSnapshot) => {
-    setCompletedCategories(lockStatus.completedCategories);
-    setUnlockedScoreCategories(lockStatus.unlockedCategories);
-    setPlayerScores(lockStatus.scores);
+    if (lockStatus.unlockedCategories.length > 0) {
+      setUnlockedScoreCategories(lockStatus.unlockedCategories);
+    }
   }, []);
 
   const refreshScoreBoard = useCallback(
-    async (gameId: string, playerId: string, shouldFetchPossibleScores: boolean) => {
+    async (gameId: string, playerId: string, shouldFetchPossibleScores = false) => {
       const [lockStatus, nextPossibleScores] = await Promise.all([
         getScoreLockStatus(gameId, playerId),
-        shouldFetchPossibleScores ? getPossibleScoreSnapshot(gameId) : Promise.resolve<PossibleScoreSnapshot>({}),
+        shouldFetchPossibleScores ? getPossibleScoreSnapshot(gameId, playerId) : Promise.resolve<PossibleScoreSnapshot>({}),
       ]);
 
       applyScoreLockStatus(lockStatus);
@@ -501,12 +539,21 @@ export default function GamePage() {
   const waitingTurnLabel = isAiTurn ? '机器人思考中' : '等待其他玩家';
   const panelSelfPlayer = scorePanelPlayerById[selfPlayerId];
   const panelActivePlayer = scorePanelPlayerById[activePlayerId];
-  const selfPlayerName = panelSelfPlayer?.username ?? syncedSelfPlayer?.name ?? player?.name ?? '乐乐玩家';
+  const selfPlayerName = (panelSelfPlayer?.username || syncedSelfPlayer?.name || player?.name || '乐乐玩家').trim() || '乐乐玩家';
   const activePlayerName = panelActivePlayer?.username ?? syncedActivePlayer?.name ?? selfPlayerName;
   const isCreatingEntryGame = isQueryReady && queryState.pendingCreate && !queryState.gameId && !entryGameCreateError;
+  const hasAuthToken = Boolean(authToken?.trim());
   const isSingleMode = isLocalMode && !queryState.roomId;
   const isRoomGame = Boolean(queryState.roomId && currentRoom);
   const showChat = isRoomGame || mode === 'online';
+  const hasRolledCurrentTurn = hasRolledDiceThisTurn(rollsLeft);
+  const displayedPossibleScores = useMemo<PossibleScoreSnapshot>(
+    () =>
+      hasRolledCurrentTurn && !isRolling && canOperateCurrentTurn
+        ? possibleScores
+        : {},
+    [canOperateCurrentTurn, hasRolledCurrentTurn, isRolling, possibleScores]
+  );
   const players = useMemo<GamePlayer[]>(() => {
     if (serverGameStatus) {
       const orderedPlayers = [...serverGameStatus.players].sort((first, second) => {
@@ -612,14 +659,21 @@ export default function GamePage() {
   const syncedScoresByPlayerId = useMemo<Record<string, Partial<Record<ScoreCategory, number>>>>(() => {
     if (!serverGameStatus) return {};
 
-    return Object.fromEntries(serverGameStatus.players.map(item => [item.playerId, item.scores]));
+    return Object.fromEntries(
+      serverGameStatus.players.map(item => [
+        item.playerId,
+        getCommittedScores(item.scores, item.totalScore, serverGameStatus.status),
+      ])
+    );
   }, [serverGameStatus]);
 
   const selfScores = useMemo<Partial<Record<ScoreCategory, number>>>(() => {
     if (!queryState.gameId) return playerScores;
     if (selfPlayerId === activePlayerId) return playerScores;
-    return syncedSelfPlayer?.scores ?? {};
-  }, [activePlayerId, playerScores, queryState.gameId, selfPlayerId, syncedSelfPlayer?.scores]);
+    return syncedSelfPlayer && serverGameStatus
+      ? getCommittedScores(syncedSelfPlayer.scores, syncedSelfPlayer.totalScore, serverGameStatus.status)
+      : {};
+  }, [activePlayerId, playerScores, queryState.gameId, selfPlayerId, serverGameStatus, syncedSelfPlayer]);
   const currentUpperScore = calculateUpperSubtotal(selfScores);
   const currentUpperBonus = calculateUpperBonus(currentUpperScore);
   const currentLowerScore = calculateLowerTotal(selfScores);
@@ -630,41 +684,54 @@ export default function GamePage() {
   }, [players, selfPlayerId]);
   const applyGameStatusSnapshot = useCallback((status: GameStatusSnapshot) => {
     const currentSnapshot = status.players.find(item => item.playerId === status.currentPlayer) ?? status.players[0];
-    const nextCompletedCategories = Object.keys(currentSnapshot?.scores ?? {}) as ScoreCategory[];
+    const currentCommittedScores = currentSnapshot
+      ? getCommittedScores(currentSnapshot.scores, currentSnapshot.totalScore, status.status)
+      : {};
+    const nextCompletedCategories = Object.keys(currentCommittedScores) as ScoreCategory[];
+    const shouldHoldRollingDisplay = rollingGuardRef.current && status.currentPlayer === selfPlayerId;
+    const shouldKeepLocalRolledDisplay =
+      !shouldHoldRollingDisplay &&
+      status.currentPlayer === selfPlayerId &&
+      hasRolledDiceThisTurn(rollsLeft) &&
+      !hasRolledDiceThisTurn(status.rollsLeft) &&
+      !scoreSubmittingGuardRef.current &&
+      status.status !== 'finished';
 
     const previousCurrentPlayer = serverGameStatusRef.current?.currentPlayer;
     serverGameStatusRef.current = status;
 
     setServerGameStatus(status);
-    setDice(status.dice);
-    setLocked(currentLocked =>
-      resolveSyncedLockedDiceState(
-        status.diceLocked,
-        currentLocked,
-        status.rollsLeft,
-        status.currentPlayer,
-        previousCurrentPlayer
-      )
-    );
-    setRollsLeft(status.rollsLeft);
-    setPlayerScores(currentSnapshot?.scores ?? {});
+    if (!shouldHoldRollingDisplay && !shouldKeepLocalRolledDisplay) {
+      setDice(status.dice);
+      setLocked(currentLocked =>
+        resolveSyncedLockedDiceState(
+          status.diceLocked,
+          currentLocked,
+          status.rollsLeft,
+          status.currentPlayer,
+          previousCurrentPlayer
+        )
+      );
+      setRollsLeft(status.rollsLeft);
+    }
+    setPlayerScores(currentCommittedScores);
     setCompletedCategories(nextCompletedCategories);
     setUnlockedScoreCategories(
       SCORE_CATEGORIES.map(item => item.category).filter(category => !nextCompletedCategories.includes(category))
     );
     setPossibleScores(currentPossibleScores =>
-      status.currentPlayer === selfPlayerId &&
-      status.rollsLeft < MAX_ROLLS_PER_TURN &&
-      status.status !== 'finished'
+      (status.currentPlayer === selfPlayerId &&
+        hasRolledDiceThisTurn(status.rollsLeft) &&
+        status.status !== 'finished') ||
+      shouldKeepLocalRolledDisplay
         ? currentPossibleScores
         : {}
     );
-
     return {
       currentSnapshot,
       nextCompletedCategories,
     };
-  }, [selfPlayerId]);
+  }, [rollsLeft, selfPlayerId]);
 
   const gameResultData = useMemo<GameResultData>(() => {
     const resultPlayers = players.map((item, index) => ({
@@ -839,14 +906,15 @@ export default function GamePage() {
     if (!isQueryReady || !queryState.pendingCreate || queryState.gameId || entryCreateGuardRef.current) return;
 
     const gameMode = isApiGameMode(queryState.mode) ? queryState.mode : 'local';
-    const playerNames = gameMode === 'ai' ? [selfPlayerName, 'AI机器人'] : [selfPlayerName];
-
     entryCreateGuardRef.current = true;
     setEntryGameCreateError(null);
 
     createGame({
       game_mode: gameMode,
-      player_names: playerNames,
+      player_name: selfPlayerName,
+      room_code: gameMode === 'online' ? queryState.roomId : undefined,
+      ai_difficulty: gameMode === 'ai' ? queryState.difficulty : undefined,
+      client_id: gameMode === 'ai' && !hasAuthToken ? getOrCreateClientId() : undefined,
     })
       .then(game => {
         const params = new URLSearchParams({
@@ -880,6 +948,7 @@ export default function GamePage() {
     queryState.pendingCreate,
     queryState.roomId,
     router,
+    hasAuthToken,
     selfPlayerName,
   ]);
 
@@ -902,7 +971,7 @@ export default function GamePage() {
         await refreshScoreBoard(
           gameId,
           status.currentPlayer ?? selfPlayerId,
-          status.currentPlayer === selfPlayerId && status.rollsLeft < MAX_ROLLS_PER_TURN
+          status.currentPlayer === selfPlayerId && hasRolledDiceThisTurn(status.rollsLeft)
         );
       })
       .catch(error => {
@@ -925,7 +994,7 @@ export default function GamePage() {
       void refreshScoreBoard(
         gameId,
         status.currentPlayer ?? selfPlayerId,
-        status.currentPlayer === selfPlayerId && status.rollsLeft < MAX_ROLLS_PER_TURN
+        status.currentPlayer === selfPlayerId && hasRolledDiceThisTurn(status.rollsLeft)
       ).catch(error => {
         console.error(error);
       });
@@ -954,7 +1023,7 @@ export default function GamePage() {
         void refreshScoreBoard(
           gameId,
           status.currentPlayer ?? selfPlayerId,
-          status.currentPlayer === selfPlayerId && status.rollsLeft < MAX_ROLLS_PER_TURN
+          status.currentPlayer === selfPlayerId && hasRolledDiceThisTurn(status.rollsLeft)
         ).catch(error => {
           console.error(error);
         });
@@ -988,7 +1057,7 @@ export default function GamePage() {
           await refreshScoreBoard(
             gameId,
             status.currentPlayer ?? selfPlayerId,
-            status.currentPlayer === selfPlayerId && status.rollsLeft < MAX_ROLLS_PER_TURN
+            status.currentPlayer === selfPlayerId && hasRolledDiceThisTurn(status.rollsLeft)
           );
         }
       } catch (error) {
@@ -1101,6 +1170,7 @@ export default function GamePage() {
   const handleRollDice = async () => {
     if (!canOperateCurrentTurn || !queryState.gameId || rollingGuardRef.current || isRolling || rollsLeft <= 0) return;
 
+    playDiceRollSound();
     rollingGuardRef.current = true;
     setIsRolling(true);
 
@@ -1114,10 +1184,12 @@ export default function GamePage() {
       const nextLocked =
         rollResult.diceLocked && rollResult.diceLocked.length === initialLocked.length ? rollResult.diceLocked : locked;
       const nextRollsLeft = rollResult.rollsLeft;
-      const nextPossibleScores = await getPossibleScoreSnapshot(queryState.gameId).catch(error => {
-        console.error(error);
-        return {};
-      });
+      const nextPossibleScores = hasRolledDiceThisTurn(nextRollsLeft)
+        ? await getPossibleScoreSnapshot(queryState.gameId, selfPlayerId).catch(error => {
+            console.error(error);
+            return {};
+          })
+        : {};
 
       setDice(nextDice);
       setLocked(nextLocked);
@@ -1220,17 +1292,17 @@ export default function GamePage() {
       setDice(initialDice);
       setLocked(normalizeLockedDiceState(initialLocked));
       setRollsLeft(MAX_ROLLS_PER_TURN);
+      setPossibleScores({});
+      nextCompletedCategories = Array.from(new Set([...completedCategories, submittedCategory]));
+      setCompletedCategories(nextCompletedCategories);
+      setPlayerScores(submittedPlayerScores);
+      setUnlockedScoreCategories(current => current.filter(item => item !== submittedCategory));
 
       try {
         const nextLockStatus = await getScoreLockStatus(queryState.gameId, nextTurnPlayerId);
-        nextCompletedCategories = nextLockStatus.completedCategories;
         applyScoreLockStatus(nextLockStatus);
       } catch (syncError) {
         console.error(syncError);
-        nextCompletedCategories = [...completedCategories, submittedCategory];
-        setCompletedCategories(nextCompletedCategories);
-        setPlayerScores(submittedPlayerScores);
-        setUnlockedScoreCategories(current => current.filter(item => item !== submittedCategory));
       }
     } catch (error) {
       console.error(error);
@@ -1240,7 +1312,6 @@ export default function GamePage() {
       setIsSubmittingScore(false);
     }
 
-    setPossibleScores({});
     if (LOWER_CATEGORIES.includes(submittedCategory)) {
       setGameEvents(prev => [
         {
@@ -1263,6 +1334,35 @@ export default function GamePage() {
     }
   };
 
+  const entryLoadingOverlay = (isCreatingEntryGame || entryGameCreateError) ? (
+    <section className={styles.entryLoadingOverlay} aria-live="polite" aria-busy={isCreatingEntryGame}>
+      <LoadingImage size="stage" priority className={styles.entryLoadingImage} />
+      <span className={styles.entryLoadingStatus}>{entryGameCreateError ? '创建对局失败' : '正在创建对局'}</span>
+      {entryGameCreateError && (
+        <div className={styles.entryLoadingPanel}>
+          <h1>创建对局失败</h1>
+          <p>{entryGameCreateError}</p>
+          <button type="button" onClick={() => router.push('/')}>
+            返回大厅
+          </button>
+        </div>
+      )}
+    </section>
+  ) : null;
+
+  if (entryLoadingOverlay) {
+    return (
+      <ResponsiveStage
+        className={styles.gamePage}
+        viewportClassName={styles.gameViewport}
+        stageClassName={styles.gameStage}
+        backgroundImage={gameBackground.src}
+      >
+        {entryLoadingOverlay}
+      </ResponsiveStage>
+    );
+  }
+
   return (
     <>
       <ResponsiveStage
@@ -1271,21 +1371,7 @@ export default function GamePage() {
         stageClassName={styles.gameStage}
         backgroundImage={gameBackground.src}
       >
-        <YachtScoreEffect triggerKey={yachtEffectKey} />
-        {(isCreatingEntryGame || entryGameCreateError) && (
-          <section className={styles.entryLoadingOverlay} aria-live="polite" aria-busy={isCreatingEntryGame}>
-            <div className={styles.entryLoadingPanel}>
-              <Dice5 size={48} />
-              <h1>{entryGameCreateError ? '创建对局失败' : '正在创建对局'}</h1>
-              <p>{entryGameCreateError ?? '正在连接后端并准备棋盘，请稍候。'}</p>
-              {entryGameCreateError && (
-                <button type="button" onClick={() => router.push('/')}>
-                  返回大厅
-                </button>
-              )}
-            </div>
-          </section>
-        )}
+        {yachtEffectKey > 0 && <YachtScoreEffect triggerKey={yachtEffectKey} />}
         <header className={styles.topLayer}>
           <Link className={styles.logoArea} href="/" aria-label="返回投骰乐园首页">
             <span className={styles.logoDice}>D6</span>
@@ -1397,15 +1483,16 @@ export default function GamePage() {
             {SCORE_CATEGORIES.map((row, index) => {
               const category = row.category;
               const score = playerScores[category];
-              const possibleScore = possibleScores[category];
+              const possibleScore = displayedPossibleScores[category];
               const isCompleted = completedCategories.includes(category);
               const hasPossibleScore = possibleScore !== undefined;
+              const completedScore = isCompleted ? score : undefined;
               const isUnlocked = unlockedScoreCategories.includes(category);
               const disabled =
                 !canOperateCurrentTurn ||
                 isCompleted ||
                 !isUnlocked ||
-                rollsLeft === MAX_ROLLS_PER_TURN ||
+                !hasRolledCurrentTurn ||
                 isRolling ||
                 isSubmittingScore;
 
@@ -1441,7 +1528,9 @@ export default function GamePage() {
                           isCurrentPlayerColumn && !isCompleted && hasPossibleScore ? styles.scoreValuePossible : ''
                         }`}
                       >
-                        {isCurrentPlayerColumn ? score ?? (hasPossibleScore ? possibleScore ?? 0 : '-') : itemScore ?? '-'}
+                        {isCurrentPlayerColumn
+                          ? completedScore ?? (hasPossibleScore ? possibleScore ?? 0 : '-')
+                          : itemScore ?? '-'}
                       </span>
                     );
                   })}
@@ -1474,22 +1563,24 @@ export default function GamePage() {
           </ul>
         </aside>
 
-        <GameRulesModal open={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
+        {isRulesOpen && <GameRulesModal open={isRulesOpen} onClose={() => setIsRulesOpen(false)} />}
       </ResponsiveStage>
 
-      <GameResultModal
-        open={isResultOpen}
-        result={displayedResultData}
-        initialSelectedPlayerId={resultSelectedPlayerId}
-        loading={isSettlementLoading}
-        onBackLobby={handleBackLobbyFromResult}
-        onReplay={handleReplay}
-        backLoading={isReturningLobby}
-        replayLoading={isRematching}
-        actionError={resultActionError}
-        onShare={() => undefined}
-        onSave={() => undefined}
-      />
+      {isResultOpen && (
+        <GameResultModal
+          open={isResultOpen}
+          result={displayedResultData}
+          initialSelectedPlayerId={resultSelectedPlayerId}
+          loading={isSettlementLoading}
+          onBackLobby={handleBackLobbyFromResult}
+          onReplay={handleReplay}
+          backLoading={isReturningLobby}
+          replayLoading={isRematching}
+          actionError={resultActionError}
+          onShare={() => undefined}
+          onSave={() => undefined}
+        />
+      )}
     </>
   );
 }

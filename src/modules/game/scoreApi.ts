@@ -149,11 +149,13 @@ export function scoreItemIdToCategory(itemId: number, scheme: ScoreItemIdScheme 
   return scheme === 'compact13' ? categoriesByCompactId[itemId] : categoriesByBonusSlotId[itemId];
 }
 
-function normalizeScoreCategoryKey(key: string): ScoreCategory | undefined {
+function normalizeScoreCategoryKey(key: string, scheme?: ScoreItemIdScheme): ScoreCategory | undefined {
   if (categoryAliases[key]) return categoryAliases[key];
 
   const scoreItemId = Number(key);
   if (!Number.isInteger(scoreItemId)) return undefined;
+
+  if (scheme) return scoreItemIdToCategory(scoreItemId, scheme);
 
   return scoreItemIdToCategory(scoreItemId, 'withBonusSlot') ?? scoreItemIdToCategory(scoreItemId, 'compact13');
 }
@@ -211,8 +213,14 @@ function normalizeLockStatus(data: ScoreLockStatusData): ScoreLockStatusSnapshot
 }
 
 function normalizePossibleScores(data: PossibleScoresData): PossibleScoreSnapshot {
-  return Object.entries(data.possibleScores).reduce<PossibleScoreSnapshot>((result, [key, value]) => {
-    const category = normalizeScoreCategoryKey(key);
+  const entries = Object.entries(data.possibleScores);
+  const numericItemIds = entries
+    .map(([key]) => Number(key))
+    .filter(itemId => Number.isInteger(itemId));
+  const scheme = numericItemIds.length > 0 ? detectScoreItemIdScheme(numericItemIds) : undefined;
+
+  return entries.reduce<PossibleScoreSnapshot>((result, [key, value]) => {
+    const category = normalizeScoreCategoryKey(key, scheme);
     if (!category) return result;
 
     return {
@@ -284,9 +292,19 @@ export async function getScoreLockStatus(
   }
 }
 
-export async function getPossibleScoreSnapshot(gameId: string): Promise<PossibleScoreSnapshot> {
+export async function getPossibleScoreSnapshot(
+  gameId: string,
+  playerId: string | number
+): Promise<PossibleScoreSnapshot> {
   try {
-    const response = await apiClient.get<ScoreApiEnvelope<PossibleScoresData>>(`/score/possible/${gameId}`);
+    const response = await apiClient.get<ScoreApiEnvelope<PossibleScoresData>>(
+      `/score/possible/${gameId}`,
+      {
+        params: {
+          player_id: toBackendPlayerId(playerId),
+        },
+      }
+    );
     return normalizePossibleScores(unwrapScoreApiResponse(response.data, '鑾峰彇鍙兘寰楀垎澶辫触'));
   } catch (error) {
     throw toScoreApiError(error, '鑾峰彇鍙兘寰楀垎澶辫触');

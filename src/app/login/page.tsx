@@ -16,6 +16,7 @@ interface LoginPageProps {
   searchParams?: {
     mode?: string;
     reason?: string;
+    redirect?: string;
   };
 }
 
@@ -59,11 +60,19 @@ function getInitialErrorMessage(reason?: string) {
   return reason === 'auth-required' ? '请先登录后再继续' : '';
 }
 
+function getSafeRedirectPath(value?: string) {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
+  if (value === '/login' || value.startsWith('/login?') || value.startsWith('/login/')) return '/';
+
+  return value;
+}
+
 export default function LoginPage({ searchParams }: LoginPageProps) {
   const router = useRouter();
   const { login, register } = useAuth();
   const initialAuthTab = getInitialAuthTab(searchParams?.mode);
   const initialErrorMessage = getInitialErrorMessage(searchParams?.reason);
+  const redirectPath = getSafeRedirectPath(searchParams?.redirect);
   const [activeTab, setActiveTab] = useState<AuthTab>(initialAuthTab);
   const [loginForm, setLoginForm] = useState<LoginFormState>(initialLoginForm);
   const [registerForm, setRegisterForm] = useState<RegisterFormState>(initialRegisterForm);
@@ -140,7 +149,7 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
     try {
       await login(loginForm.nickname.trim(), loginForm.password);
       setSuccessMessage('登录成功');
-      router.push('/');
+      router.push(redirectPath);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '登录失败，请稍后重试');
     } finally {
@@ -165,7 +174,7 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
       await register(registerForm.nickname.trim(), registerForm.phone.trim(), registerForm.password);
       setSuccessMessage('注册成功');
       setRegisterForm(initialRegisterForm);
-      router.push('/');
+      router.push(redirectPath);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '注册失败，请稍后重试');
     } finally {

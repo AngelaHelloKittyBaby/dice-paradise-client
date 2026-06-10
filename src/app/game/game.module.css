@@ -46,10 +46,27 @@
   background:
     radial-gradient(circle at 50% 38%, rgba(61, 167, 255, 0.24), transparent 28%),
     linear-gradient(180deg, rgba(3, 20, 52, 0.58), rgba(2, 10, 34, 0.84));
+  overflow: hidden;
   pointer-events: auto;
 }
 
+.entryLoadingImage {
+  width: 1920px;
+  height: 1080px;
+}
+
+.entryLoadingStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
 .entryLoadingPanel {
+  position: absolute;
   display: grid;
   width: 420px;
   min-height: 250px;
@@ -60,12 +77,6 @@
   background: linear-gradient(180deg, rgba(20, 40, 90, 0.96), rgba(10, 20, 50, 0.94));
   box-shadow: 0 24px 60px rgba(0, 12, 40, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   text-align: center;
-}
-
-.entryLoadingPanel svg {
-  color: #ffd873;
-  filter: drop-shadow(0 8px 16px rgba(255, 185, 54, 0.26));
-  animation: entryLoadingDice 1.2s ease-in-out infinite;
 }
 
 .entryLoadingPanel h1 {

@@ -74,6 +74,25 @@ export default function RoomPage() {
   );
   const currentPlayerMember = members.find(member => member.playerId === currentPlayerId);
   const isCurrentPlayerReady = Boolean(currentPlayerMember?.isReady);
+  const hasEnoughPlayersToStart = members.length >= 2;
+  const areRoomPlayersReady = members.every(member => member.isHost || member.isReady);
+  const canStartRoomGame = hasEnoughPlayersToStart && areRoomPlayersReady;
+  const hostPromptTitle = isHost
+    ? canStartRoomGame
+      ? '房主可以开始游戏'
+      : hasEnoughPlayersToStart
+        ? '等待其他玩家准备'
+        : '等待其他玩家加入'
+    : isCurrentPlayerReady
+      ? '你已准备，等待房主开始'
+      : '点击准备加入对局';
+  const hostStartButtonText = isCreatingGame
+    ? '创建中'
+    : canStartRoomGame
+      ? '开始游戏'
+      : hasEnoughPlayersToStart
+        ? '等待其他玩家准备'
+        : '等待其他玩家加入';
 
   const appendChatMessage = useCallback((message: GameChatMessage) => {
     setChatMessages(currentMessages => [...currentMessages, message].slice(-ROOM_CHAT_MESSAGE_LIMIT));
@@ -258,8 +277,6 @@ export default function RoomPage() {
   const handleStartGame = async () => {
     if (!isHost || !currentRoom || isCreatingGame) return;
 
-    const canStartRoomGame =
-      currentRoom.members.length >= 2 && currentRoom.members.every(member => member.isHost || member.isReady);
     if (!canStartRoomGame) return;
 
     setIsCreatingGame(true);
@@ -442,14 +459,19 @@ export default function RoomPage() {
 
       <section className={styles.hostPrompt} aria-label="房主开始游戏提示">
         <div className={styles.promptText}>
-          <strong>{isHost ? '房主可以开始游戏' : isCurrentPlayerReady ? '你已准备，等待房主开始' : '点击准备加入对局'}</strong>
+          <strong>{hostPromptTitle}</strong>
           <p>
             当前 <span>{members.length}</span> 人在房间中
           </p>
         </div>
         {isHost ? (
-          <button className={styles.startGameButton} type="button" disabled={isCreatingGame} onClick={handleStartGame}>
-            {isCreatingGame ? '创建中' : '开始游戏'}
+          <button
+            className={styles.startGameButton}
+            type="button"
+            disabled={isCreatingGame || !canStartRoomGame}
+            onClick={handleStartGame}
+          >
+            {hostStartButtonText}
           </button>
         ) : (
           <button

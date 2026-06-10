@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-import { GlobalSideEffects } from '@/components/common/GlobalSideEffects/GlobalSideEffects';
+import { AuthGuard } from '@/components/auth';
+import { LazyGlobalSideEffects } from '@/components/common/GlobalSideEffects/LazyGlobalSideEffects';
 import { PreventBrowserZoom } from '@/components/layout';
+import { GlobalAudioController } from '@/modules/audio/GlobalAudioController';
 import '@/styles/globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -20,8 +22,11 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body className={inter.className}>
         <PreventBrowserZoom />
-        <GlobalSideEffects />
-        <div className="dice-paradise-app-shell">{children}</div>
+        <GlobalAudioController />
+        <LazyGlobalSideEffects />
+        <AuthGuard>
+          <div className="dice-paradise-app-shell">{children}</div>
+        </AuthGuard>
       </body>
     </html>
   );

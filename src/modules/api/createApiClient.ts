@@ -36,13 +36,44 @@ function isAuthEndpoint(url?: string) {
   return Boolean(url?.includes('/auth/login') || url?.includes('/auth/register'));
 }
 
-function requiresAuthToken(url?: string) {
-  return Boolean(url?.includes('/room/create') || url?.includes('/room/join'));
+function readRequestBody(data: unknown): Record<string, unknown> | null {
+  if (typeof data === 'string') {
+    try {
+      const parsedData = JSON.parse(data) as unknown;
+      return readRequestBody(parsedData);
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+    return data as Record<string, unknown>;
+  }
+
+  return null;
+}
+
+function getRequestGameMode(data: unknown) {
+  const requestBody = readRequestBody(data);
+  const gameMode = requestBody?.game_mode;
+
+  return typeof gameMode === 'string' ? gameMode : null;
+}
+
+function requiresAuthToken(url?: string, data?: unknown) {
+  if (url?.includes('/room/create') || url?.includes('/room/join')) return true;
+
+  if (url?.includes('/game/create')) {
+    return getRequestGameMode(data) !== 'ai';
+  }
+
+  return false;
 }
 
 function getAuthenticationRequiredMessage(url?: string) {
   if (url?.includes('/room/join')) return '请先登录后再加入房间';
   if (url?.includes('/room/create')) return '请先登录后再创建房间';
+  if (url?.includes('/game/')) return '请先登录后再继续对局';
 
   return '请先登录后再继续';
 }
@@ -91,7 +122,7 @@ export function createApiClient() {
     const { authToken, tokenType } = usePlayerStore.getState();
     const normalizedAuthToken = authToken?.trim();
 
-    if (requiresAuthToken(config.url) && !normalizedAuthToken) {
+    if (requiresAuthToken(config.url, config.data) && !normalizedAuthToken) {
       redirectToLogin();
       return Promise.reject(new ApiAuthenticationRequiredError(getAuthenticationRequiredMessage(config.url)));
     }

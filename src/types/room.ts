@@ -26,6 +26,7 @@ export interface Room {
   id: string;
   name: string;
   hostId: string;
+  gameId?: string | null;
   members: RoomMember[];
   settings: RoomSettings;
   status: RoomStatus;

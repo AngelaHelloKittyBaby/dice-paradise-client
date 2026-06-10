@@ -18,6 +18,7 @@ import gameoverArt from '@/assets/images/ui/icons/gameover.png';
 import yachtArt from '@/assets/images/ui/icons/游艇.png';
 import targetArt from '@/assets/images/ui/icons/靶子.png';
 import diceArt from '@/assets/images/ui/icons/骰子.png';
+import { LoadingImage } from '@/components/ui';
 import { mockGameResult, mockPlayerDetail } from '@/mocks/gameResult';
 import type {
   GameResultData,
@@ -179,7 +180,8 @@ export function ScoreDetailPanel({ player, loading = false }: ScoreDetailProps) 
 
       {loading && (
         <div className={styles.detailLoading} aria-live="polite">
-          分数刷新中...
+          <LoadingImage size="sm" />
+          <span>分数刷新中...</span>
         </div>
       )}
     </section>

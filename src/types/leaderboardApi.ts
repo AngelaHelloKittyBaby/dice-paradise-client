@@ -8,6 +8,7 @@ export interface UpdateLeaderboardWinsRequest {
 export interface UpdateLeaderboardGamesRequest {
   winner_id: number;
   game_mode: ApiGameMode;
+  last_play_time?: string | null;
 }
 
 export interface UpdateLeaderboardWinsData {

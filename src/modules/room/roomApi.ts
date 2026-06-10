@@ -40,6 +40,8 @@ interface RecoveredRoomSession {
 }
 
 const apiClient = createApiClient();
+const ROOM_QUERY_TIMEOUT_MS = 20_000;
+const ROOM_MUTATION_TIMEOUT_MS = 30_000;
 
 function unwrapRoomApiResponse<T>(response: RoomApiEnvelope<T>, fallbackMessage: string): T {
   if (response.code !== 200) {
@@ -115,8 +117,13 @@ export function normalizeRoomData(data: ApiRoomData): Room {
 
   return {
     id: normalizeOptionalText(data.roomCode ?? data.room_code ?? data.id),
-    name: normalizeOptionalText(data.roomName ?? data.room_name, '联机房间'),
+    name: normalizeOptionalText(data.roomName ?? data.room_name ?? data.name, '联机房间'),
     hostId: normalizedHostId,
+    gameId: data.gameId === null || data.gameId === undefined
+      ? data.game_id === null || data.game_id === undefined
+        ? null
+        : String(data.game_id)
+      : String(data.gameId),
     members,
     settings: {
       maxPlayers: data.maxPlayers ?? data.max_players ?? 4,
@@ -146,16 +153,39 @@ export function getRoomApiErrorMessage(error: unknown, fallbackMessage: string) 
   if (typeof envelope?.detail === 'string' && envelope.detail.trim()) return envelope.detail;
   if (typeof envelope?.msg === 'string' && envelope.msg.trim()) return envelope.msg;
   if (typeof envelope?.message === 'string' && envelope.message.trim()) return envelope.message;
+  if (isRoomApiTimeoutError(error)) return '联机房间响应超时，请确认后端服务正常后再重试';
   if (axios.isAxiosError(error) && !error.response) return '无法连接后端服务，请稍后再试';
   if (error instanceof Error && error.message.trim()) return error.message;
 
   return fallbackMessage;
 }
 
+function isRoomApiTimeoutError(error: unknown) {
+  return axios.isAxiosError(error) && (
+    error.code === 'ECONNABORTED' ||
+    error.message.toLowerCase().includes('timeout')
+  );
+}
+
 function logRoomApiError(operation: string, error: unknown) {
   if (isApiAuthenticationRequiredError(error)) return;
 
+  if (isRoomApiTimeoutError(error)) {
+    console.warn(`[${operation}] 联机房间接口响应超时`, {
+      message: error instanceof Error ? error.message : 'timeout',
+    });
+    return;
+  }
+
   if (axios.isAxiosError<RoomApiErrorEnvelope>(error)) {
+    if (!error.response) {
+      console.warn(`[${operation}] 无法连接联机房间接口`, {
+        message: error.message,
+        code: error.code,
+      });
+      return;
+    }
+
     console.error(`❌ [${operation}] 错误详情:`, {
       message: error.message,
       code: error.code,
@@ -272,6 +302,14 @@ function normalizeRoomListItem(data: ApiRoomListItem): RoomListItem {
   };
 }
 
+function normalizeCreateOnlineRoomRequest(request: CreateOnlineRoomRequest): CreateOnlineRoomRequest {
+  return {
+    room_name: request.room_name ?? null,
+    max_players: request.max_players ?? 4,
+    game_mode: request.game_mode ?? 'online',
+  };
+}
+
 function normalizeJoinOnlineRoomData(data: JoinOnlineRoomData) {
   const playerId = normalizeRoomPlayerId(data.playerId ?? data.player_id);
 
@@ -286,9 +324,13 @@ function normalizeJoinOnlineRoomData(data: JoinOnlineRoomData) {
 }
 
 export async function createOnlineRoom(request: CreateOnlineRoomRequest): Promise<Room> {
-  console.log('🏠 [createOnlineRoom] 发送请求:', JSON.stringify(request));
+  const normalizedRequest = normalizeCreateOnlineRoomRequest(request);
+
+  console.log('🏠 [createOnlineRoom] 发送请求:', JSON.stringify(normalizedRequest));
   try {
-    const response = await apiClient.post<RoomApiEnvelope<ApiRoomData>>('/room/create', request);
+    const response = await apiClient.post<RoomApiEnvelope<ApiRoomData>>('/room/create', normalizedRequest, {
+      timeout: ROOM_MUTATION_TIMEOUT_MS,
+    });
     console.log('✅ [createOnlineRoom] 成功响应:', JSON.stringify(response.data));
     return normalizeRoomData(unwrapRoomApiResponse(response.data, '房间创建失败'));
   } catch (error) {
@@ -300,7 +342,9 @@ export async function createOnlineRoom(request: CreateOnlineRoomRequest): Promis
 export async function joinOnlineRoom(request: JoinOnlineRoomRequest): Promise<{ room: Room; playerId: string }> {
   console.log('🔗 [joinOnlineRoom] 发送请求:', JSON.stringify(request));
   try {
-    const response = await apiClient.post<RoomApiEnvelope<JoinOnlineRoomData>>('/room/join', request);
+    const response = await apiClient.post<RoomApiEnvelope<JoinOnlineRoomData>>('/room/join', request, {
+      timeout: ROOM_MUTATION_TIMEOUT_MS,
+    });
     console.log('✅ [joinOnlineRoom] 收到响应:', JSON.stringify(response.data));
 
     if (response.data.code !== 200 && !isAlreadyInRoomMessage(response.data.msg)) {
@@ -320,7 +364,9 @@ export async function joinOnlineRoom(request: JoinOnlineRoomRequest): Promise<{ 
 
 export async function getOnlineRoom(roomCode: string): Promise<Room> {
   try {
-    const response = await apiClient.get<RoomApiEnvelope<ApiRoomData>>(`/room/${roomCode}`);
+    const response = await apiClient.get<RoomApiEnvelope<ApiRoomData>>(`/room/${roomCode}`, {
+      timeout: ROOM_QUERY_TIMEOUT_MS,
+    });
     return normalizeRoomData(unwrapRoomApiResponse(response.data, '获取房间信息失败'));
   } catch (error) {
     logRoomApiError('getOnlineRoom', error);
@@ -332,7 +378,9 @@ export async function getCurrentOnlineRoom(
   fallbackPlayerId?: string,
   fallbackPlayerName?: string
 ): Promise<RecoveredRoomSession | null> {
-  const response = await apiClient.get<RoomApiEnvelope<unknown | null>>('/room/current');
+  const response = await apiClient.get<RoomApiEnvelope<unknown | null>>('/room/current', {
+    timeout: ROOM_QUERY_TIMEOUT_MS,
+  });
 
   if (response.data.code !== 200) {
     throw new Error(response.data.msg || 'Get current room failed');
@@ -363,7 +411,9 @@ export async function getCurrentOnlineRoom(
 export async function getWaitingRoomList(): Promise<RoomListItem[]> {
   console.log('📋 [getWaitingRoomList] 获取等待中的房间列表');
   try {
-    const response = await apiClient.get<RoomApiEnvelope<RoomListResponseData | null>>('/room/list');
+    const response = await apiClient.get<RoomApiEnvelope<RoomListResponseData | null>>('/room/list', {
+      timeout: ROOM_QUERY_TIMEOUT_MS,
+    });
     console.log('✅ [getWaitingRoomList] 成功响应:', JSON.stringify(response.data));
 
     if (response.data.code !== 200) {
@@ -381,6 +431,8 @@ export async function leaveOnlineRoom(request: LeaveOnlineRoomRequest): Promise<
   const response = await apiClient.post<RoomApiEnvelope<null>>('/room/leave', {
     room_code: request.room_code,
     player_id: toBackendRoomPlayerId(request.player_id),
+  }, {
+    timeout: ROOM_MUTATION_TIMEOUT_MS,
   });
 
   if (response.data.code !== 200) {
@@ -389,7 +441,9 @@ export async function leaveOnlineRoom(request: LeaveOnlineRoomRequest): Promise<
 }
 
 export async function dismissOnlineRoom(roomCode: string): Promise<void> {
-  const response = await apiClient.delete<RoomApiEnvelope<null>>(`/room/${roomCode}`);
+  const response = await apiClient.delete<RoomApiEnvelope<null>>(`/room/${roomCode}`, {
+    timeout: ROOM_MUTATION_TIMEOUT_MS,
+  });
 
   if (response.data.code !== 200) {
     throw new Error(response.data.msg || '解散房间失败');
@@ -399,19 +453,25 @@ export async function dismissOnlineRoom(roomCode: string): Promise<void> {
 export async function kickOnlineRoom(roomCode: string, request: KickOnlineRoomRequest): Promise<Room> {
   const response = await apiClient.post<RoomApiEnvelope<ApiRoomData>>(`/room/${roomCode}/kick`, {
     target_player_id: toBackendRoomPlayerId(request.target_player_id),
+  }, {
+    timeout: ROOM_MUTATION_TIMEOUT_MS,
   });
 
   return normalizeRoomData(unwrapRoomApiResponse(response.data, 'Kick player failed'));
 }
 
 export async function setOnlineRoomReady(roomCode: string, request: SetOnlineRoomReadyRequest): Promise<Room> {
-  const response = await apiClient.post<RoomApiEnvelope<ApiRoomData>>(`/room/${roomCode}/ready`, request);
+  const response = await apiClient.post<RoomApiEnvelope<ApiRoomData>>(`/room/${roomCode}/ready`, request, {
+    timeout: ROOM_MUTATION_TIMEOUT_MS,
+  });
 
   return normalizeRoomData(unwrapRoomApiResponse(response.data, 'Set ready status failed'));
 }
 
 export async function startOnlineRoom(roomCode: string): Promise<StartOnlineRoomData> {
-  const response = await apiClient.post<RoomApiEnvelope<StartOnlineRoomData>>(`/room/${roomCode}/start`);
+  const response = await apiClient.post<RoomApiEnvelope<StartOnlineRoomData>>(`/room/${roomCode}/start`, undefined, {
+    timeout: ROOM_MUTATION_TIMEOUT_MS,
+  });
 
   const data = unwrapRoomApiResponse(response.data, '开始游戏失败');
 

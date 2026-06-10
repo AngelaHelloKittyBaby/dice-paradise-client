@@ -18,6 +18,8 @@ export type { BadgeProps } from './Badge';
 
 export { Loading } from './Loading';
 export type { LoadingProps } from './Loading';
+export { LoadingImage } from './LoadingImage';
+export type { LoadingImageProps } from './LoadingImage';
 
 export { Toast } from './Toast';
 export type { ToastProps } from './Toast';

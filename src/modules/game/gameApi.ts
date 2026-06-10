@@ -1,6 +1,8 @@
 import { createApiClient } from '@/modules/api/createApiClient';
 import type { DiceValue, ScoreCategory } from '@/types/game';
 import type {
+  ApiAiDifficulty,
+  ApiCreateGameData,
   ApiGameStatusData,
   ApiScoreCategory,
   CreateGameData,
@@ -51,6 +53,32 @@ const scoreKeyMap: Record<ApiScoreCategory, ScoreCategory> = {
   yahtzee: 'yacht',
   chance: 'chance',
 };
+
+function normalizeOptionalText(value: string | null | undefined) {
+  return value?.trim() || undefined;
+}
+
+function normalizeAiDifficulty(value: string | null | undefined): ApiAiDifficulty | undefined {
+  if (value === 'normal' || value === 'medium') return 'medium';
+  if (value === 'easy' || value === 'hard') return value;
+
+  return undefined;
+}
+
+function normalizeCreateGameRequest(request: CreateGameRequest): CreateGameRequest {
+  const playerName = normalizeOptionalText(request.player_name);
+  const roomCode = normalizeOptionalText(request.room_code);
+  const clientId = normalizeOptionalText(request.client_id);
+  const aiDifficulty = normalizeAiDifficulty(request.ai_difficulty);
+
+  return {
+    game_mode: request.game_mode,
+    ...(playerName ? { player_name: playerName } : {}),
+    ...(roomCode ? { room_code: roomCode } : {}),
+    ...(request.game_mode === 'ai' && aiDifficulty ? { ai_difficulty: aiDifficulty } : {}),
+    ...(request.game_mode === 'ai' && clientId ? { client_id: clientId } : {}),
+  };
+}
 
 function unwrapGameApiResponse<T>(response: GameApiEnvelope<T>, fallbackMessage: string): T {
   if (response.code !== 200) {
@@ -123,50 +151,64 @@ function normalizeDiceLocked(diceLocked: boolean[] | undefined, fallbackLocked?:
   return fallbackLocked;
 }
 
+function normalizeCreateGameData(data: ApiCreateGameData): CreateGameData {
+  const gameId = data.gameId ?? data.game_id;
+  const playerId = data.playerId ?? data.player_id;
+
+  if (gameId === null || gameId === undefined || playerId === null || playerId === undefined) {
+    throw new Error('Game create response is missing gameId or playerId');
+  }
+
+  return {
+    gameId: String(gameId),
+    playerId: String(playerId),
+    userType: data.userType ?? data.user_type ?? '',
+    hasPoints: Boolean(data.hasPoints ?? data.has_points),
+    currentPoints: data.currentPoints ?? data.current_points ?? 0,
+  };
+}
+
 export function normalizeGameStatus(data: ApiGameStatusData): GameStatusSnapshot {
   return {
-    gameId: data.gameId,
-    gameMode: data.gameMode,
-    currentPlayer: normalizePlayerId(data.currentPlayer),
+    gameId: data.gameId ?? data.game_id ?? '',
+    gameMode: data.gameMode ?? data.game_mode ?? 'local',
+    currentPlayer: normalizePlayerId(data.currentPlayer ?? data.current_player),
     players: data.players.map(player => ({
-      playerId: String(player.playerId),
+      playerId: String(player.playerId ?? player.player_id ?? ''),
       name: player.name,
-      isAi: Boolean(player.isAi),
+      isAi: Boolean(player.isAi ?? player.is_ai),
       scores: normalizeScores(player.scores),
-      totalScore: player.totalScore ?? 0,
+      totalScore: player.totalScore ?? player.total_score ?? 0,
     })),
     dice: normalizeDiceValues(data.dice),
-    diceLocked: normalizeDiceLocked(data.diceLocked),
-    rollsLeft: normalizeRollsLeft(data.rollsLeft),
+    diceLocked: normalizeDiceLocked(data.diceLocked ?? data.dice_locked),
+    rollsLeft: normalizeRollsLeft(data.rollsLeft ?? data.rolls_left),
     status: data.status,
-    createdAt: data.createdAt ?? null,
-    finishedAt: data.finishedAt ?? null,
+    createdAt: data.createdAt ?? data.created_at ?? null,
+    finishedAt: data.finishedAt ?? data.finished_at ?? null,
   };
 }
 
 export function normalizeRollDiceData(data: RollDiceData, fallbackLocked?: boolean[]): RollDiceSnapshot {
   return {
     dice: normalizeDiceValues(data.dice),
-    diceLocked: normalizeDiceLocked(data.diceLocked, fallbackLocked),
-    rollsLeft: normalizeRollsLeft(data.rollsLeft),
+    diceLocked: normalizeDiceLocked(data.diceLocked ?? data.dice_locked, fallbackLocked),
+    rollsLeft: normalizeRollsLeft(data.rollsLeft ?? data.rolls_left),
   };
 }
 
 export function normalizeToggleDiceLockData(data: ToggleDiceLockData, fallbackLocked?: boolean[]): ToggleDiceLockSnapshot {
   return {
-    diceLocked: normalizeDiceLocked(data.diceLocked, fallbackLocked),
+    diceLocked: normalizeDiceLocked(data.diceLocked ?? data.dice_locked, fallbackLocked),
   };
 }
 
 export async function createGame(request: CreateGameRequest): Promise<CreateGameData> {
-  try {
-    const response = await apiClient.post<GameApiEnvelope<CreateGameData>>('/game/create', request);
-    const data = unwrapGameApiResponse(response.data, '游戏创建失败');
+  const normalizedRequest = normalizeCreateGameRequest(request);
 
-    return {
-      ...data,
-      playerId: String(data.playerId),
-    };
+  try {
+    const response = await apiClient.post<GameApiEnvelope<ApiCreateGameData>>('/game/create', normalizedRequest);
+    return normalizeCreateGameData(unwrapGameApiResponse(response.data, '游戏创建失败'));
   } catch (error) {
     throw error;
   }

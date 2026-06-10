@@ -1,15 +1,35 @@
 import type { DiceValue, ScoreCategory } from './game';
 
 export type ApiGameMode = 'local' | 'ai' | 'online';
+export type ApiAiDifficulty = 'easy' | 'medium' | 'hard';
 
 export interface CreateGameRequest {
   game_mode: ApiGameMode;
-  player_names: string[];
+  player_name?: string | null;
+  room_code?: string | null;
+  ai_difficulty?: ApiAiDifficulty | 'normal' | string | null;
+  client_id?: string | null;
+}
+
+export interface ApiCreateGameData {
+  gameId?: string | number;
+  game_id?: string | number;
+  playerId?: string | number;
+  player_id?: string | number;
+  userType?: string;
+  user_type?: string;
+  hasPoints?: boolean;
+  has_points?: boolean;
+  currentPoints?: number | null;
+  current_points?: number | null;
 }
 
 export interface CreateGameData {
   gameId: string;
   playerId: string;
+  userType: string;
+  hasPoints: boolean;
+  currentPoints: number;
 }
 
 export interface RollDiceRequest {
@@ -20,7 +40,9 @@ export interface RollDiceRequest {
 export interface RollDiceData {
   dice?: number[];
   diceLocked?: boolean[];
+  dice_locked?: boolean[];
   rollsLeft?: number;
+  rolls_left?: number;
 }
 
 export interface RollDiceSnapshot {
@@ -40,6 +62,7 @@ export interface ToggleDiceLockRequest {
 
 export interface ToggleDiceLockData {
   diceLocked?: boolean[];
+  dice_locked?: boolean[];
 }
 
 export interface ToggleDiceLockSnapshot {
@@ -57,24 +80,34 @@ export interface SubmitScoreRequest {
 export type ApiScoreMap = Record<ApiScoreCategory, number | null>;
 
 export interface ApiGamePlayer {
-  playerId: string | number;
+  playerId?: string | number;
+  player_id?: string | number;
   name: string;
   isAi?: boolean;
+  is_ai?: boolean;
   scores?: Partial<ApiScoreMap>;
   totalScore?: number;
+  total_score?: number;
 }
 
 export interface ApiGameStatusData {
-  gameId: string;
-  gameMode: ApiGameMode;
+  gameId?: string;
+  game_id?: string;
+  gameMode?: ApiGameMode;
+  game_mode?: ApiGameMode;
   currentPlayer?: string | number | null;
+  current_player?: string | number | null;
   players: ApiGamePlayer[];
   dice?: number[];
   diceLocked?: boolean[];
+  dice_locked?: boolean[];
   rollsLeft?: number;
+  rolls_left?: number;
   status: ApiGameStatus;
   createdAt?: string | null;
+  created_at?: string | null;
   finishedAt?: string | null;
+  finished_at?: string | null;
 }
 
 export interface ApiScoreSubmitData {

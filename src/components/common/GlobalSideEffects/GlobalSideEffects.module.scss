@@ -11,7 +11,7 @@
 .effectsLayer {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  z-index: 95;
   overflow: hidden;
   pointer-events: none;
   contain: layout paint style;
@@ -162,7 +162,7 @@
 }
 
 .coinsLayer {
-  z-index: 4;
+  z-index: 14;
 }
 
 .coinItem {
@@ -172,6 +172,18 @@
   border-radius: 50%;
   transform: translate3d(0, 0, 0);
   will-change: transform, opacity;
+}
+
+.coinItemFalling {
+  animation-name: coinFallAcrossScreen;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.coinItemFloating {
+  animation-name: coinSoftFloat;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 
 .coinItem::before {
@@ -187,23 +199,15 @@
 }
 
 .coinItem::after {
-  position: absolute;
-  inset: 8%;
-  z-index: 2;
-  border-radius: inherit;
-  content: '';
-  background: linear-gradient(108deg, transparent 0 34%, rgba(255, 255, 255, 0.82) 45%, transparent 56% 100%);
-  opacity: 0;
-  transform: translate3d(-150%, 0, 0) rotate(12deg);
-  animation: coinGlint 4.8s ease-in-out infinite;
-  will-change: transform, opacity;
+  display: none;
+  content: none;
 }
 
 .coinItem .effectImage {
   z-index: 1;
   filter:
-    drop-shadow(0 8px 12px rgba(91, 55, 0, 0.28))
-    drop-shadow(0 0 12px rgba(255, 212, 73, 0.36));
+    drop-shadow(0 10px 14px rgba(91, 55, 0, 0.34))
+    drop-shadow(0 0 18px rgba(255, 218, 73, 0.48));
   animation: coinImageGlow 4.6s ease-in-out infinite;
   will-change: filter, transform;
 }
@@ -222,31 +226,29 @@
 .starItem::before,
 .starItem::after {
   position: absolute;
-  inset: -36%;
+  inset: -12%;
   border-radius: 999px;
   content: '';
-  background: radial-gradient(circle, rgba(255, 239, 116, 0.56), rgba(255, 208, 54, 0.22) 36%, transparent 68%);
-  opacity: 0.28;
+  background: radial-gradient(circle, rgba(255, 239, 116, 0.44), rgba(255, 208, 54, 0.16) 34%, transparent 66%);
+  opacity: 0.22;
   transform: translate3d(0, 0, 0) scale(0.62);
   animation: starAuraPulse 3.6s ease-in-out infinite;
   will-change: opacity, transform;
 }
 
 .starItem::after {
-  inset: -14%;
-  border-radius: 4px;
-  background:
-    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.88), transparent),
-    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.88), transparent);
+  inset: 18%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.78), rgba(255, 236, 117, 0.18) 42%, transparent 70%);
   opacity: 0;
-  transform: translate3d(0, 0, 0) rotate(45deg) scale(0.7);
+  transform: translate3d(0, 0, 0) scale(0.7);
   animation: starRayFlash 4.2s ease-in-out infinite;
 }
 
 .starItem .effectImage {
   filter:
-    drop-shadow(0 0 10px rgba(255, 255, 255, 0.9))
-    drop-shadow(0 0 24px rgba(255, 217, 81, 0.52));
+    drop-shadow(0 0 6px rgba(255, 255, 255, 0.72))
+    drop-shadow(0 0 12px rgba(255, 217, 81, 0.34));
   animation: starImageGlow 3.2s ease-in-out infinite;
   will-change: filter, transform;
 }
@@ -286,17 +288,19 @@
 }
 
 .fishLayer {
-  z-index: 9;
+  z-index: 18;
   top: auto;
-  height: 42%;
+  bottom: 0;
+  height: 70%;
+  overflow: visible;
 }
 
 .fishLayer::before {
   position: absolute;
-  right: -12%;
-  bottom: -8%;
-  left: -10%;
-  height: 48%;
+  right: 0;
+  bottom: -2%;
+  left: 70%;
+  height: 30%;
   content: '';
   background:
     radial-gradient(ellipse at 50% 45%, rgba(116, 230, 255, 0.18), transparent 64%),
@@ -310,9 +314,13 @@
 .fishItem {
   position: absolute;
   display: block;
+  opacity: 0.96;
   transform: translate3d(0, 0, 0);
   transform-origin: 50% 65%;
-  will-change: transform, opacity;
+  animation-name: fishWideCruise;
+  animation-timing-function: cubic-bezier(0.45, 0, 0.2, 1);
+  animation-iteration-count: infinite;
+  will-change: transform;
 }
 
 .fishItem::after {
@@ -331,8 +339,8 @@
 
 .fishItem .effectImage {
   filter:
-    drop-shadow(0 10px 14px rgba(2, 30, 92, 0.28))
-    drop-shadow(0 0 10px rgba(100, 232, 255, 0.22));
+    drop-shadow(0 12px 16px rgba(2, 30, 92, 0.36))
+    drop-shadow(0 0 18px rgba(100, 232, 255, 0.36));
   animation: fishSwimPolish 1.45s ease-in-out infinite;
   will-change: transform, filter;
 }
@@ -382,6 +390,51 @@
   84% {
     opacity: 0;
     transform: translate3d(150%, 0, 0) rotate(12deg);
+  }
+}
+
+@keyframes coinFallAcrossScreen {
+  0% {
+    opacity: 0.18;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(0.86);
+  }
+
+  18% {
+    opacity: var(--coin-opacity);
+    transform: translate3d(var(--coin-drift-a), 32vh, 0) rotate(var(--coin-fall-rotation-a)) scale(1.08);
+  }
+
+  58% {
+    opacity: var(--coin-opacity-bright);
+    transform: translate3d(var(--coin-drift-b), 82vh, 0) rotate(var(--coin-fall-rotation-b)) scale(0.96);
+  }
+
+  100% {
+    opacity: 0.16;
+    transform: translate3d(var(--coin-drift-c), 132vh, 0) rotate(var(--coin-rotation)) scale(0.9);
+  }
+}
+
+@keyframes coinSoftFloat {
+  0%,
+  100% {
+    opacity: var(--coin-opacity-soft);
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(0.92);
+  }
+
+  28% {
+    opacity: var(--coin-opacity);
+    transform: translate3d(var(--coin-float-drift-a), -2.8vh, 0) rotate(var(--coin-float-rotation-a)) scale(1.06);
+  }
+
+  58% {
+    opacity: var(--coin-opacity-mid);
+    transform: translate3d(var(--coin-float-drift-b), 1.7vh, 0) rotate(var(--coin-float-rotation-b)) scale(0.98);
+  }
+
+  78% {
+    opacity: var(--coin-opacity-bright);
+    transform: translate3d(var(--coin-float-drift-c), -1.1vh, 0) rotate(var(--coin-float-rotation-c)) scale(1.02);
   }
 }
 
@@ -462,6 +515,41 @@
   }
 }
 
+@keyframes fishWideCruise {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--fish-rotate-start)) scale(1);
+  }
+
+  16% {
+    transform: translate3d(var(--fish-x-1), var(--fish-y-1), 0) rotate(var(--fish-rotate-1)) scale(1.018);
+  }
+
+  34% {
+    transform: translate3d(var(--fish-x-2), var(--fish-y-2), 0) rotate(var(--fish-rotate-2)) scale(1.01);
+  }
+
+  54% {
+    transform: translate3d(var(--fish-x-3), var(--fish-y-3), 0) rotate(var(--fish-rotate-3)) scale(1.026);
+  }
+
+  56% {
+    transform: translate3d(var(--fish-x-3), var(--fish-y-3), 0) rotate(var(--fish-rotate-3)) scaleX(-1) scale(1.026);
+  }
+
+  72% {
+    transform: translate3d(var(--fish-x-4), var(--fish-y-4), 0) rotate(var(--fish-rotate-4)) scaleX(-1) scale(1.012);
+  }
+
+  88% {
+    transform: translate3d(var(--fish-x-5), var(--fish-y-5), 0) rotate(var(--fish-rotate-5)) scaleX(-1) scale(1.02);
+  }
+
+  98% {
+    transform: translate3d(0, 0, 0) rotate(var(--fish-rotate-start)) scaleX(-1) scale(1);
+  }
+}
+
 @keyframes fishWakeFlow {
   0%,
   100% {
@@ -478,13 +566,13 @@
 @keyframes starAuraPulse {
   0%,
   100% {
-    opacity: 0.16;
+    opacity: 0.1;
     transform: translate3d(0, 0, 0) scale(0.62);
   }
 
   48% {
-    opacity: 0.48;
-    transform: translate3d(0, 0, 0) scale(1.18);
+    opacity: 0.34;
+    transform: translate3d(0, 0, 0) scale(1.02);
   }
 }
 
@@ -493,17 +581,17 @@
   64%,
   100% {
     opacity: 0;
-    transform: translate3d(0, 0, 0) rotate(45deg) scale(0.7);
+    transform: translate3d(0, 0, 0) scale(0.7);
   }
 
   74% {
-    opacity: 0.72;
-    transform: translate3d(0, 0, 0) rotate(45deg) scale(1.18);
+    opacity: 0.48;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 
   84% {
-    opacity: 0.18;
-    transform: translate3d(0, 0, 0) rotate(45deg) scale(0.88);
+    opacity: 0.12;
+    transform: translate3d(0, 0, 0) scale(0.82);
   }
 }
 
@@ -511,16 +599,16 @@
   0%,
   100% {
     filter:
-      drop-shadow(0 0 10px rgba(255, 255, 255, 0.78))
-      drop-shadow(0 0 22px rgba(255, 217, 81, 0.46));
+      drop-shadow(0 0 6px rgba(255, 255, 255, 0.66))
+      drop-shadow(0 0 12px rgba(255, 217, 81, 0.32));
     transform: translate3d(0, 0, 0) scale(1);
   }
 
   50% {
     filter:
-      drop-shadow(0 0 16px rgba(255, 255, 255, 0.98))
-      drop-shadow(0 0 34px rgba(255, 221, 86, 0.7));
-    transform: translate3d(0, 0, 0) scale(1.08);
+      drop-shadow(0 0 8px rgba(255, 255, 255, 0.82))
+      drop-shadow(0 0 16px rgba(255, 221, 86, 0.48));
+    transform: translate3d(0, 0, 0) scale(1.04);
   }
 }
 
@@ -534,15 +622,5 @@
   50% {
     opacity: 0.72;
     transform: translate3d(14px, -4px, 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .effectsLayer *,
-  .effectsLayer *::before,
-  .effectsLayer *::after {
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
   }
 }

@@ -1,0 +1,72 @@
+.loadingImageWrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--loading-image-width);
+  max-width: min(82vw, var(--loading-image-width));
+  aspect-ratio: 16 / 9;
+  overflow: visible;
+  isolation: isolate;
+}
+
+.loadingImageWrapStage {
+  width: 1920px;
+  max-width: none;
+}
+
+.loadingImageWrapStage::before {
+  display: none;
+}
+
+.loadingImageWrap::before {
+  position: absolute;
+  inset: 18% 22% 10%;
+  z-index: -1;
+  border-radius: 50%;
+  content: '';
+  background: radial-gradient(circle, rgba(91, 213, 255, 0.38), rgba(255, 217, 93, 0.18) 48%, transparent 72%);
+  filter: blur(18px);
+  opacity: 0.78;
+  animation: loadingGlow 2.4s ease-in-out infinite;
+}
+
+.loadingImage {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter:
+    drop-shadow(0 18px 28px rgba(0, 20, 72, 0.32))
+    drop-shadow(0 0 22px rgba(98, 215, 255, 0.22));
+  animation: loadingFloat 2.2s ease-in-out infinite;
+  user-select: none;
+  pointer-events: none;
+}
+
+.loadingImageWrapStage .loadingImage {
+  animation: none;
+  filter: none;
+}
+
+@keyframes loadingFloat {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(0, -8px, 0) scale(1.025);
+  }
+}
+
+@keyframes loadingGlow {
+  0%,
+  100% {
+    opacity: 0.52;
+    transform: scale(0.96);
+  }
+
+  50% {
+    opacity: 0.88;
+    transform: scale(1.06);
+  }
+}

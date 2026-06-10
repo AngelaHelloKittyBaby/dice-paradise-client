@@ -16,9 +16,7 @@ interface BalloonEffect {
 }
 
 const balloonEffects: BalloonEffect[] = [
-  { id: 'balloon-1', left: '8%', top: '102%', size: 118, duration: 18, delay: -4, sway: ['0vw', '2.4vw', '-1.2vw', '1vw', '0vw'] },
   { id: 'balloon-2', left: '42%', top: '102%', size: 154, duration: 20, delay: -15, sway: ['0vw', '-1.8vw', '2vw', '-0.8vw', '0vw'] },
-  { id: 'balloon-3', left: '70%', top: '102%', size: 96, duration: 19, delay: -9, sway: ['0vw', '1.4vw', '-2vw', '0.7vw', '0vw'] },
   { id: 'balloon-game-top', left: '34%', top: '15%', size: 92, duration: 6.8, delay: -1.4, sway: ['0px', '18px', '-12px', '10px', '0px'] },
 ];
 

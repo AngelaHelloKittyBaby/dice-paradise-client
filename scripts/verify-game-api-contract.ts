@@ -68,6 +68,11 @@ assert.match(
 );
 assert.match(
   scoreApi,
+  /\/score\/possible\/\$\{gameId\}[\s\S]*player_id:\s*toBackendPlayerId\(playerId\)/,
+  'possible scores should send player_id query parameter'
+);
+assert.match(
+  scoreApi,
   /\/game\/\$\{gameId\}\/score/,
   'score submission should use the backend game score API'
 );

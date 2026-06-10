@@ -95,11 +95,30 @@ export function GlobalSideEffects() {
     <>
       <div
         className={styles.backgroundLayer}
-        style={{ backgroundImage: `url(${backgroundImage.src})` }}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: 'none',
+          backgroundImage: `url(${backgroundImage.src})`,
+          backgroundPosition: 'center',
+          backgroundSize: 'cover',
+          backgroundRepeat: 'no-repeat',
+        }}
         aria-hidden="true"
       />
-      <MotionConfig reducedMotion="user">
-        <div className={styles.effectsLayer} aria-hidden="true">
+      <MotionConfig reducedMotion="never">
+        <div
+          className={styles.effectsLayer}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 95,
+            overflow: 'hidden',
+            pointerEvents: 'none',
+          }}
+          aria-hidden="true"
+        >
           <section className={`${styles.sideZone} ${styles.leftZone}`}>
             {renderParticles(leftParticles)}
             <FloatingStars side="left" />
@@ -114,8 +133,10 @@ export function GlobalSideEffects() {
             <FloatingDice side="right" />
             <FloatingBalloons />
             <FloatingAirship />
-            <FloatingFish />
           </section>
+
+          <FloatingCoins side="screen" />
+          <FloatingFish />
         </div>
       </MotionConfig>
     </>

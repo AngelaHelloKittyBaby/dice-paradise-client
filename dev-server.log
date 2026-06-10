@@ -1,37 +1,10 @@
+
+> dice-paradise@0.1.0 dev
+> next dev -p 3001
+
   ▲ Next.js 14.2.3
-  - Local:        http://localhost:3000
+  - Local:        http://localhost:3001
   - Environments: .env.local
 
  ✓ Starting...
- ✓ Ready in 2.8s
- ○ Compiling /login ...
- ✓ Compiled /login in 1654ms (1603 modules)
- GET /login?mode=login 200 in 1899ms
- ✓ Compiled in 3s (773 modules)
- ✓ Compiled in 454ms (773 modules)
-   Reload env: .env.local
- ✓ Compiled in 276ms (759 modules)
- ✓ Compiled in 303ms (774 modules)
- ✓ Compiled in 234ms (774 modules)
- ✓ Compiled in 216ms (774 modules)
- ✓ Compiled in 198ms (774 modules)
- ✓ Compiled in 236ms (774 modules)
- ✓ Compiled in 243ms (774 modules)
- ✓ Compiled in 183ms (774 modules)
- ✓ Compiled in 208ms (774 modules)
- ✓ Compiled in 214ms (774 modules)
- ✓ Compiled in 187ms (774 modules)
- ✓ Compiled in 214ms (774 modules)
- ✓ Compiled in 200ms (774 modules)
- ✓ Compiled in 242ms (774 modules)
- ✓ Compiled in 313ms (774 modules)
- ○ Compiling / ...
- ✓ Compiled / in 1332ms (1786 modules)
- GET / 200 in 1640ms
-  ▲ Next.js 14.2.3
-  - Local:        http://localhost:3000
-  - Environments: .env.local
-
- ✓ Starting...
-   Reload env: .env.local
- ✓ Ready in 3.7s
+ ✓ Ready in 10.6s

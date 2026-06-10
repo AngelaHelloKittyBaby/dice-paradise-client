@@ -23,7 +23,10 @@ export function useHomeSoundSetting(
   const setSoundEnabled = useCallback(
     (nextEnabled: boolean) => {
       setSoundEnabledState(nextEnabled);
-      updateSettings({ soundEnabled: nextEnabled });
+      updateSettings({
+        soundEnabled: nextEnabled,
+        musicEnabled: nextEnabled,
+      });
     },
     [updateSettings]
   );

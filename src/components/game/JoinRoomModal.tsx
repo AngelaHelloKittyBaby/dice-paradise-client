@@ -108,7 +108,7 @@ export function JoinRoomModal({
       0
     )
   );
-  const displayedRooms: RoomData[] = rooms.map((room, index) => ({
+  const displayedRooms: RoomData[] = [...rooms].reverse().map((room, index) => ({
     id: room.id,
     avatar: defaultAvatar.src,
     roomName: room.name,

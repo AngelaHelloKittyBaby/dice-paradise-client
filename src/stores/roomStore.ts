@@ -57,14 +57,14 @@ function getRoomListItem(room: Room): RoomListItem {
   };
 }
 
-function getCurrentClientId() {
+function ensureLoggedInPlayer() {
   const player = usePlayerStore.getState().player;
 
   if (!player?.id) {
     throw new Error('请先登录后再操作房间');
   }
 
-  return player.id;
+  return player;
 }
 
 export const useRoomStore = create<RoomStore>((set, get) => ({
@@ -99,9 +99,8 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     let currentPlayerId = '';
 
     try {
+      ensureLoggedInPlayer();
       newRoom = await createOnlineRoom({
-        client_id: getCurrentClientId(),
-        player_name: playerName,
         room_name: name,
         max_players: settings.maxPlayers,
         game_mode: 'online',
@@ -128,10 +127,9 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
     let currentPlayerId = '';
 
     try {
+      ensureLoggedInPlayer();
       const joinResult = await joinOnlineRoom({
-        client_id: getCurrentClientId(),
         room_code: roomCode,
-        player_name: playerName,
       });
       joinedRoom = joinResult.room;
       currentPlayerId = joinResult.playerId;

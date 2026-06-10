@@ -26,29 +26,18 @@ export async function getHomePoints(clientId: string): Promise<number> {
     throw new Error('缺少用户ID');
   }
 
-  console.log('⭐ [getHomePoints] 发送请求, clientId:', clientId);
-  try {
-    const response = await apiClient.get<HomeApiEnvelope<HomePointsData>>('/home/points', {
-      params: {
-        client_id: clientId,
-      },
-    });
-    console.log('✅ [getHomePoints] 成功响应:', JSON.stringify(response.data));
-    const data = unwrapHomeApiResponse(response.data, '获取星星积分失败');
+  const response = await apiClient.get<HomeApiEnvelope<HomePointsData>>('/home/points', {
+    params: {
+      client_id: clientId,
+    },
+  });
+  const data = unwrapHomeApiResponse(response.data, '获取星星积分失败');
 
-    if (!Number.isFinite(data.points)) {
-      throw new Error('获取星星积分失败');
-    }
-
-    return data.points;
-  } catch (error: any) {
-    console.error('❌ [getHomePoints] 错误详情:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-    });
-    throw error;
+  if (!Number.isFinite(data.points)) {
+    throw new Error('获取星星积分失败');
   }
+
+  return data.points;
 }
 
 function ensureClientId(clientId: string) {

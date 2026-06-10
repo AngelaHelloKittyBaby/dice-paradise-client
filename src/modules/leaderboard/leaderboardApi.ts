@@ -17,6 +17,12 @@ interface LeaderboardApiEnvelope<T> {
 
 const apiClient = createApiClient();
 
+function formatLocalIsoDateTime(date: Date) {
+  const timezoneOffsetMs = date.getTimezoneOffset() * 60_000;
+
+  return new Date(date.getTime() - timezoneOffsetMs).toISOString().slice(0, 19);
+}
+
 function unwrapLeaderboardApiResponse<T>(response: LeaderboardApiEnvelope<T>, fallbackMessage: string): T {
   if (response.code !== 200 || response.data === null || response.data === undefined) {
     throw new Error(response.msg || fallbackMessage);
@@ -56,11 +62,13 @@ export async function updateLeaderboardWins(
 
 export async function updateLeaderboardGames(
   winnerId: number,
-  gameMode: ApiGameMode
+  gameMode: ApiGameMode,
+  lastPlayTime = formatLocalIsoDateTime(new Date())
 ): Promise<UpdateLeaderboardGamesData> {
   const request: UpdateLeaderboardGamesRequest = {
     winner_id: winnerId,
     game_mode: gameMode,
+    last_play_time: lastPlayTime,
   };
   const response = await apiClient.post<LeaderboardApiEnvelope<UpdateLeaderboardGamesData> | UpdateLeaderboardGamesData>(
     '/leaderboard/update-games',

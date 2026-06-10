@@ -98,6 +98,18 @@ export const usePlayerStore = create<PlayerStore>()(
     }),
     {
       name: 'dice-paradise-player',
+      merge: (persistedState, currentState) => {
+        const state = persistedState as Partial<PlayerStore>;
+
+        return {
+          ...currentState,
+          ...state,
+          settings: {
+            ...currentState.settings,
+            ...state.settings,
+          },
+        };
+      },
       partialize: (state) => ({
         player: state.player,
         isLoggedIn: state.isLoggedIn,
