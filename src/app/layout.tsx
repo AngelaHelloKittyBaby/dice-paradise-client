@@ -13,6 +13,14 @@ export const metadata: Metadata = {
   description: '经典快艇骰子游戏网页版，支持单人练习、本地多人、在线联机等多种模式',
 };
 
+function AppContent({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthGuard>
+      <div className="dice-paradise-app-shell">{children}</div>
+    </AuthGuard>
+  );
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -24,9 +32,7 @@ export default function RootLayout({
         <PreventBrowserZoom />
         <GlobalAudioController />
         <LazyGlobalSideEffects />
-        <AuthGuard>
-          <div className="dice-paradise-app-shell">{children}</div>
-        </AuthGuard>
+        <AppContent>{children}</AppContent>
       </body>
     </html>
   );

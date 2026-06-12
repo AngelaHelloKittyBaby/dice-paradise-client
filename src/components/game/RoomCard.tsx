@@ -63,7 +63,6 @@ export function RoomCard({ type, onClick, disabled = false }: RoomCardProps) {
         fill
         sizes="218px"
         className="pointer-events-none object-contain"
-        priority
       />
 
       <div

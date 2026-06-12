@@ -62,6 +62,14 @@ function getRequestGameMode(data: unknown) {
 
 function requiresAuthToken(url?: string, data?: unknown) {
   if (url?.includes('/room/create') || url?.includes('/room/join')) return true;
+  if (
+    url?.includes('/leaderboard/add-experience') ||
+    url?.includes('/leaderboard/update-win-streak') ||
+    url?.includes('/leaderboard/game-settle') ||
+    url?.includes('/leaderboard/update-games')
+  ) {
+    return true;
+  }
 
   if (url?.includes('/game/create')) {
     return getRequestGameMode(data) !== 'ai';
@@ -73,6 +81,7 @@ function requiresAuthToken(url?: string, data?: unknown) {
 function getAuthenticationRequiredMessage(url?: string) {
   if (url?.includes('/room/join')) return '请先登录后再加入房间';
   if (url?.includes('/room/create')) return '请先登录后再创建房间';
+  if (url?.includes('/leaderboard/')) return '请先登录后再结算排行榜数据';
   if (url?.includes('/game/')) return '请先登录后再继续对局';
 
   return '请先登录后再继续';

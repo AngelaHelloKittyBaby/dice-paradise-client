@@ -31,7 +31,7 @@ export function FloatingDice() {
             filter: 'drop-shadow(0 0 26px rgba(174, 85, 255, 0.92)) drop-shadow(0 0 58px rgba(124, 58, 237, 0.72))',
           }}
         >
-          <Image src={magicCircle} alt="" fill sizes="470px" className="object-contain" priority />
+          <Image src={magicCircle} alt="" fill sizes="470px" className="object-contain" />
         </motion.div>
       </div>
 
@@ -82,7 +82,7 @@ export function FloatingDice() {
             filter: 'drop-shadow(0 0 28px rgba(255, 230, 95, 0.95)) drop-shadow(0 0 66px rgba(245, 158, 11, 0.82))',
           }}
         >
-          <Image src={goldenDice} alt="" fill sizes="218px" className="object-contain" priority />
+          <Image src={goldenDice} alt="" fill sizes="218px" className="object-contain" />
         </motion.div>
       </div>
 

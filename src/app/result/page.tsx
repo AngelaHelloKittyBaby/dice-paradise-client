@@ -169,8 +169,6 @@ export default function ResultPage() {
       backLoading={isReturningLobby}
       replayLoading={isRematching}
       actionError={actionError}
-      onShare={() => undefined}
-      onSave={() => undefined}
     />
   );
 }

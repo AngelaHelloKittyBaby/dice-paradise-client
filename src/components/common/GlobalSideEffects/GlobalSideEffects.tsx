@@ -33,8 +33,16 @@ type ParticleStyle = CSSProperties & {
 };
 
 function seededValue(index: number, salt: number) {
-  const value = Math.sin(index * 31.415 + salt * 17.71) * 10000;
-  return value - Math.floor(value);
+  let seed = Math.imul(index + 1, 0x1f123bb5) ^ Math.imul(salt + 1, 0x5bd1e995);
+  seed ^= seed >>> 15;
+  seed = Math.imul(seed, 0x2c1b3c6d);
+  seed ^= seed >>> 12;
+
+  return ((seed >>> 0) % 10_000) / 10_000;
+}
+
+function toCssNumber(value: number, precision = 3) {
+  return Number(value.toFixed(precision));
 }
 
 function createParticles(count: number): ParticleEffect[] {
@@ -48,13 +56,13 @@ function createParticles(count: number): ParticleEffect[] {
       id: `global-particle-${index}`,
       side,
       tone,
-      left: `${3 + seededValue(index, 3) * 92}%`,
-      top: `${2 + seededValue(index, 5) * 96}%`,
+      left: `${toCssNumber(3 + seededValue(index, 3) * 92)}%`,
+      top: `${toCssNumber(2 + seededValue(index, 5) * 96)}%`,
       size: 3 + Math.round(seededValue(index, 7) * 7),
-      duration: 5.4 + seededValue(index, 11) * 7.6,
-      delay: seededValue(index, 13) * -12,
-      driftX: `${driftDirection * (10 + seededValue(index, 17) * 38)}px`,
-      driftY: `${-16 - seededValue(index, 19) * 46}px`,
+      duration: toCssNumber(5.4 + seededValue(index, 11) * 7.6),
+      delay: toCssNumber(seededValue(index, 13) * -12),
+      driftX: `${toCssNumber(driftDirection * (10 + seededValue(index, 17) * 38))}px`,
+      driftY: `${toCssNumber(-16 - seededValue(index, 19) * 46)}px`,
     };
   });
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import Image, { type StaticImageData } from 'next/image';
 import { useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
@@ -13,11 +13,16 @@ import diceIconImage from '@/assets/images/ui/icons/骰子.png';
 import leaderboardBackground from '@/assets/images/backgrounds/leaderboard/leaderboard-bg.png';
 import { IslandTopNav, ResponsiveStage } from '@/components/layout';
 import { StarIcon } from '@/components/ui';
-import { useHomePoints, useLeaderboardGamesRanking, useLeaderboardRanking } from '@/hooks';
+import {
+  useLeaderboardExperienceRanking,
+  useLeaderboardHighestScoreRanking,
+  useLeaderboardWinRateRanking,
+  useLeaderboardWinStreakRanking,
+} from '@/hooks';
 import { usePlayerStore } from '@/stores';
-import type { LeaderboardGamesRankingData, LeaderboardRankingData } from '@/types/leaderboardApi';
+import type { LeaderboardItemBaseData } from '@/types/leaderboardApi';
 
-type LeaderboardType = 'highestScore' | 'totalGames' | 'totalWins' | 'winRate';
+type LeaderboardType = 'highestScore' | 'experience' | 'winStreak' | 'winRate';
 
 interface LeaderboardMenuItem {
   type: LeaderboardType;
@@ -40,6 +45,7 @@ interface LeaderboardRow {
   rank: number | string;
   userId?: number;
   avatar: string;
+  avatarImage?: string | null;
   avatarTone: string;
   name: string;
   vip?: string;
@@ -57,10 +63,6 @@ interface LeaderboardBoard {
   myRanking: LeaderboardRow;
 }
 
-interface LeaderboardApiResponse {
-  boards: Record<LeaderboardType, LeaderboardBoard>;
-}
-
 const leaderboardMenus: LeaderboardMenuItem[] = [
   {
     type: 'highestScore',
@@ -70,16 +72,16 @@ const leaderboardMenus: LeaderboardMenuItem[] = [
     iconColor: 'text-[#ffcf58]',
   },
   {
-    type: 'totalGames',
-    label: '总对局数排行榜',
+    type: 'experience',
+    label: '投骰经验值排行榜',
     imageIcon: diceIconImage,
     imageIconClassName: 'h-[50px] w-[50px] -ml-2 -mr-1 scale-125 object-contain',
     activeIconColor: 'text-[#256bff]',
     iconColor: 'text-[#70c6ff]',
   },
   {
-    type: 'totalWins',
-    label: '总胜利局数排行榜',
+    type: 'winStreak',
+    label: '最高连胜局数排行榜',
     icon: Trophy,
     activeIconColor: 'text-[#26b858]',
     iconColor: 'text-[#92f7a6]',
@@ -93,254 +95,152 @@ const leaderboardMenus: LeaderboardMenuItem[] = [
   },
 ];
 
-const statCards: StatCard[] = [
+const statCards: Omit<StatCard, 'value'>[] = [
   {
     type: 'highestScore',
     title: '历史最高得分\n排行榜',
-    value: '128,650',
     backgroundImage: board1Background.src,
   },
   {
-    type: 'totalGames',
-    title: '总对局数\n排行榜',
-    value: '5,860',
+    type: 'experience',
+    title: '投骰经验值\n排行榜',
     backgroundImage: board2Background.src,
   },
   {
-    type: 'totalWins',
-    title: '总胜利局数\n排行榜',
-    value: '2,450',
+    type: 'winStreak',
+    title: '最高连胜局数\n排行榜',
     backgroundImage: board3Background.src,
   },
   {
     type: 'winRate',
     title: '胜率\n排行榜',
-    value: '78%',
     backgroundImage: board4Background.src,
   },
 ];
 
 const basePlayers = [
-  { avatar: '🎲', avatarTone: 'from-[#e8f7ff] to-[#56a7ff]', name: '乐乐玩家', vip: 'VIP4' },
-  { avatar: '🐕', avatarTone: 'from-[#fff4d8] to-[#f19b33]', name: '殿子小达人', vip: 'VIP3' },
-  { avatar: '🤖', avatarTone: 'from-[#dff8ff] to-[#2a8dff]', name: 'AI机器人', vip: 'VIP3' },
-  { avatar: '🐧', avatarTone: 'from-[#ffffff] to-[#6f8fb5]', name: '海洋之心', vip: 'VIP2' },
-  { avatar: '🧸', avatarTone: 'from-[#ffd9a5] to-[#8b4c20]', name: '自由的风', vip: 'VIP2' },
-  { avatar: '👩‍🦰', avatarTone: 'from-[#ffd7eb] to-[#ff6f91]', name: '幸运女神', vip: 'VIP1' },
-  { avatar: '🐥', avatarTone: 'from-[#fff28a] to-[#ffb72e]', name: '阳光男孩', vip: 'VIP1' },
-  { avatar: '👦', avatarTone: 'from-[#bfe9ff] to-[#3197ff]', name: '漫游者' },
+  { avatar: '乐', avatarTone: 'from-[#e8f7ff] to-[#56a7ff]', name: '乐乐玩家', vip: 'VIP4' },
+  { avatar: '骰', avatarTone: 'from-[#fff4d8] to-[#f19b33]', name: '骰子小达人', vip: 'VIP3' },
+  { avatar: 'AI', avatarTone: 'from-[#dff8ff] to-[#2a8dff]', name: 'AI 机器人', vip: 'VIP3' },
+  { avatar: '海', avatarTone: 'from-[#ffffff] to-[#6f8fb5]', name: '海洋之心', vip: 'VIP2' },
+  { avatar: '风', avatarTone: 'from-[#ffd9a5] to-[#8b4c20]', name: '自由的风', vip: 'VIP2' },
+  { avatar: '星', avatarTone: 'from-[#ffd7eb] to-[#ff6f91]', name: '幸运星', vip: 'VIP1' },
+  { avatar: '阳', avatarTone: 'from-[#fff28a] to-[#ffb72e]', name: '阳光男孩', vip: 'VIP1' },
+  { avatar: '游', avatarTone: 'from-[#bfe9ff] to-[#3197ff]', name: '漫游者' },
 ];
-
-function createRows(values: string[], times: string[]): LeaderboardRow[] {
-  return basePlayers.map((player, index) => ({
-    rank: index + 1,
-    ...player,
-    metricValue: values[index],
-    time: times[index],
-    exp: ['256,780', '198,450', '176,240', '152,130', '134,780', '115,230', '106,570', '92,380'][
-      index
-    ],
-  }));
-}
-
-const defaultTimes = [
-  '2024-05-25 21:36',
-  '2024-05-24 18:20',
-  '2024-05-23 20:15',
-  '2024-05-20 16:08',
-  '2024-05-19 14:37',
-  '2024-05-18 22:11',
-  '2024-05-18 09:52',
-  '2024-05-17 13:30',
-];
-
-const mockLeaderboardApiResponse: LeaderboardApiResponse = {
-  boards: {
-    highestScore: {
-      type: 'highestScore',
-      title: '历史最高得分排行榜',
-      metricLabel: '历史最高得分',
-      statValue: '128,650',
-      rows: createRows(
-        ['128,650', '112,780', '98,320', '86,430', '75,680', '64,210', '58,960', '48,750'],
-        defaultTimes
-      ),
-      myRanking: {
-        rank: 23,
-        avatar: '🎲',
-        avatarTone: 'from-[#e8f7ff] to-[#56a7ff]',
-        name: '乐乐玩家',
-        vip: 'VIP4',
-        metricValue: '35,680',
-        time: '2024-05-16 20:45',
-        exp: '68,450',
-      },
-    },
-    totalGames: {
-      type: 'totalGames',
-      title: '总对局数排行榜',
-      metricLabel: '总对局数',
-      statValue: '5,860',
-      rows: createRows(['5,860', '5,120', '4,780', '4,230', '3,980', '3,420', '3,090', '2,750'], defaultTimes),
-      myRanking: {
-        rank: 31,
-        avatar: '🎲',
-        avatarTone: 'from-[#e8f7ff] to-[#56a7ff]',
-        name: '乐乐玩家',
-        vip: 'VIP4',
-        metricValue: '1,260',
-        time: '2024-05-16 20:45',
-        exp: '68,450',
-      },
-    },
-    totalWins: {
-      type: 'totalWins',
-      title: '总胜利局数排行榜',
-      metricLabel: '总胜利局数',
-      statValue: '2,450',
-      rows: createRows(['2,450', '2,120', '1,986', '1,730', '1,560', '1,280', '1,060', '920'], defaultTimes),
-      myRanking: {
-        rank: 27,
-        avatar: '🎲',
-        avatarTone: 'from-[#e8f7ff] to-[#56a7ff]',
-        name: '乐乐玩家',
-        vip: 'VIP4',
-        metricValue: '680',
-        time: '2024-05-16 20:45',
-        exp: '68,450',
-      },
-    },
-    winRate: {
-      type: 'winRate',
-      title: '胜率排行榜',
-      metricLabel: '胜率',
-      statValue: '78%',
-      rows: createRows(['78%', '75%', '72%', '69%', '65%', '63%', '59%', '55%'], defaultTimes),
-      myRanking: {
-        rank: 18,
-        avatar: '🎲',
-        avatarTone: 'from-[#e8f7ff] to-[#56a7ff]',
-        name: '乐乐玩家',
-        vip: 'VIP4',
-        metricValue: '61%',
-        time: '2024-05-16 20:45',
-        exp: '68,450',
-      },
-    },
-  },
-};
 
 const LEADERBOARD_VISIBLE_ROW_COUNT = 8;
 const LEADERBOARD_LOOKUP_LIMIT = 100;
 
-function createTotalWinsRow(item: LeaderboardRankingData['leaderboard'][number], index: number): LeaderboardRow {
+function formatNumber(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '-';
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+
+  return `${Number.isInteger(value) ? value.toString() : value.toFixed(1)}%`;
+}
+
+function formatAchieveTime(value: string | null | undefined) {
+  if (!value) return '-';
+
+  return value.replace('T', ' ').slice(0, 16);
+}
+
+function getPlayerName(item: LeaderboardItemBaseData) {
+  return item.nickname?.trim() || `玩家${item.user_id}`;
+}
+
+function getAvatarText(name: string) {
+  return name.trim().slice(0, 2) || 'P';
+}
+
+function getCurrentUserId(playerId?: string | null) {
+  if (!playerId) return null;
+
+  const numericId = Number(playerId);
+  return Number.isInteger(numericId) ? numericId : null;
+}
+
+function createApiRow<TItem extends LeaderboardItemBaseData>(
+  item: TItem,
+  index: number,
+  getMetricText: (item: TItem) => string,
+  getExperienceValue?: (item: TItem) => number | null | undefined,
+  getTimeValue?: (item: TItem) => string | null | undefined
+): LeaderboardRow {
+  const name = getPlayerName(item);
+
   return {
     rank: item.rank,
     userId: item.user_id,
-    avatar: item.nickname.trim().slice(0, 1) || 'P',
+    avatar: getAvatarText(name),
+    avatarImage: item.avatar,
     avatarTone: basePlayers[index % basePlayers.length].avatarTone,
-    name: item.nickname,
-    metricValue: item.total_wins.toLocaleString(),
-    time: '-',
-    exp: '-',
+    name,
+    metricValue: getMetricText(item),
+    time: formatAchieveTime(getTimeValue?.(item) ?? item.achieve_time),
+    exp: formatNumber(getExperienceValue?.(item)),
   };
 }
 
-function createTotalGamesRow(item: LeaderboardGamesRankingData['leaderboard'][number], index: number): LeaderboardRow {
-  return {
-    rank: item.rank,
-    userId: item.user_id,
-    avatar: item.nickname.trim().slice(0, 1) || 'P',
-    avatarTone: basePlayers[index % basePlayers.length].avatarTone,
-    name: item.nickname,
-    metricValue: item.total_games.toLocaleString(),
-    time: '-',
-    exp: '-',
-  };
-}
-
-function getRankingIdentityKey(item: { user_id: number }) {
-  return `user:${item.user_id}`;
-}
-
-function dedupeRankingItems<T extends { user_id: number }>(items: T[]) {
-  const seenKeys = new Set<string>();
-
-  return items.filter(item => {
-    const key = getRankingIdentityKey(item);
-    if (seenKeys.has(key)) return false;
-
-    seenKeys.add(key);
-    return true;
-  });
-}
-
-function createTotalWinsBoard(
-  ranking: LeaderboardRankingData,
-  currentPlayer?: { id: string; name: string; wins: number } | null
+function createEmptyBoard(
+  type: LeaderboardType,
+  title: string,
+  metricLabel: string,
+  currentPlayer?: { id: string; name: string } | null
 ): LeaderboardBoard {
-  const dedupedLeaderboard = dedupeRankingItems(ranking.leaderboard);
-  const allRows = dedupedLeaderboard.map((item, index) => createTotalWinsRow({ ...item, rank: index + 1 }, index));
-  const rows = allRows.slice(0, LEADERBOARD_VISIBLE_ROW_COUNT);
-  const numericCurrentUserId = currentPlayer ? Number(currentPlayer.id) : null;
-  const currentUserId = Number.isInteger(numericCurrentUserId) ? numericCurrentUserId : null;
-  const myRankingFromRows = allRows.find(row => currentUserId !== null && row.userId === currentUserId);
-  const myRankingItem =
-    currentUserId !== null && ranking.my_ranking?.user_id === currentUserId ? ranking.my_ranking : undefined;
-  const myRanking = myRankingFromRows ??
-    (myRankingItem
-    ? createTotalWinsRow(myRankingItem, Math.max(myRankingItem.rank - 1, 0))
-    : {
-        rank: '--',
-        userId: currentUserId ?? undefined,
-        avatar: currentPlayer?.name.trim().slice(0, 1) || 'P',
-        avatarTone: basePlayers[0].avatarTone,
-        name: currentPlayer?.name ?? '未登录玩家',
-        metricValue: currentPlayer ? currentPlayer.wins.toLocaleString() : '-',
-        time: '-',
-        exp: '-',
-      });
+  const currentUserId = getCurrentUserId(currentPlayer?.id);
 
   return {
-    type: 'totalWins',
-    title: '总胜利局数排行榜',
-    metricLabel: '总胜利局数',
-    statValue: rows[0]?.metricValue ?? '0',
-    rows,
-    myRanking,
+    type,
+    title,
+    metricLabel,
+    statValue: '0',
+    rows: [],
+    myRanking: {
+      rank: '--',
+      userId: currentUserId ?? undefined,
+      avatar: getAvatarText(currentPlayer?.name ?? '玩家'),
+      avatarTone: basePlayers[0].avatarTone,
+      name: currentPlayer?.name ?? '未登录玩家',
+      metricValue: '-',
+      time: '-',
+      exp: '-',
+    },
   };
 }
 
-function createTotalGamesBoard(
-  ranking: LeaderboardGamesRankingData,
-  currentPlayer?: { id: string; name: string; totalGames: number } | null
+function createApiBoard<TItem extends LeaderboardItemBaseData>(
+  type: LeaderboardType,
+  title: string,
+  metricLabel: string,
+  ranking: { leaderboard: TItem[] },
+  currentPlayer: { id: string; name: string } | null | undefined,
+  getMetricText: (item: TItem) => string,
+  getExperienceValue?: (item: TItem) => number | null | undefined,
+  getTimeValue?: (item: TItem) => string | null | undefined
 ): LeaderboardBoard {
-  const dedupedLeaderboard = dedupeRankingItems(ranking.leaderboard);
-  const allRows = dedupedLeaderboard.map((item, index) => createTotalGamesRow({ ...item, rank: index + 1 }, index));
+  const seenUserIds = new Set<number>();
+  const allRows = ranking.leaderboard
+    .filter(item => {
+      if (seenUserIds.has(item.user_id)) return false;
+      seenUserIds.add(item.user_id);
+      return true;
+    })
+    .map((item, index) =>
+      createApiRow({ ...item, rank: index + 1 }, index, getMetricText, getExperienceValue, getTimeValue)
+    );
   const rows = allRows.slice(0, LEADERBOARD_VISIBLE_ROW_COUNT);
-  const numericCurrentUserId = currentPlayer ? Number(currentPlayer.id) : null;
-  const currentUserId = Number.isInteger(numericCurrentUserId) ? numericCurrentUserId : null;
-  const myRankingFromRows = allRows.find(row => currentUserId !== null && row.userId === currentUserId);
-  const myRankingItem =
-    currentUserId !== null && ranking.my_ranking?.user_id === currentUserId ? ranking.my_ranking : undefined;
-  const myRanking = myRankingFromRows ??
-    (myRankingItem
-    ? createTotalGamesRow(myRankingItem, Math.max(myRankingItem.rank - 1, 0))
-    : {
-        rank: '--',
-        userId: currentUserId ?? undefined,
-        avatar: currentPlayer?.name.trim().slice(0, 1) || 'P',
-        avatarTone: basePlayers[0].avatarTone,
-        name: currentPlayer?.name ?? '未登录玩家',
-        metricValue: currentPlayer ? currentPlayer.totalGames.toLocaleString() : '-',
-        time: '-',
-        exp: '-',
-      });
+  const currentUserId = getCurrentUserId(currentPlayer?.id);
+  const myRanking = allRows.find(row => currentUserId !== null && row.userId === currentUserId) ??
+    createEmptyBoard(type, title, metricLabel, currentPlayer).myRanking;
 
   return {
-    type: 'totalGames',
-    title: '总对局数排行榜',
-    metricLabel: '总对局数',
+    type,
+    title,
+    metricLabel,
     statValue: rows[0]?.metricValue ?? '0',
     rows,
     myRanking,
@@ -355,15 +255,27 @@ const leaderboardBackdropClass =
 const leaderboardTableSurfaceClass =
   'bg-[linear-gradient(180deg,#f7fbff_0%,#edf6ff_48%,#e9f3ff_100%)]';
 
-function AvatarBubble({ avatar, tone, size = 'large' }: { avatar: string; tone: string; size?: 'large' | 'small' }) {
-  const sizeClass = size === 'large' ? 'h-[58px] w-[58px] text-[31px]' : 'h-[46px] w-[46px] text-[25px]';
+function AvatarBubble({
+  avatar,
+  tone,
+  imageUrl,
+  size = 'large',
+}: {
+  avatar: string;
+  tone: string;
+  imageUrl?: string | null;
+  size?: 'large' | 'small';
+}) {
+  const sizeClass = size === 'large' ? 'h-[58px] w-[58px] text-[24px]' : 'h-[46px] w-[46px] text-[18px]';
+  const imageStyle = imageUrl ? ({ backgroundImage: `url(${imageUrl})` } as CSSProperties) : undefined;
 
   return (
     <span
-      className={`grid ${sizeClass} place-items-center rounded-full border-[3px] border-white bg-gradient-to-br ${tone} shadow-[0_8px_16px_rgba(0,48,140,0.24),inset_0_2px_8px_rgba(255,255,255,0.54)]`}
+      className={`grid ${sizeClass} place-items-center overflow-hidden rounded-full border-[3px] border-white bg-gradient-to-br ${tone} bg-cover bg-center font-black shadow-[0_8px_16px_rgba(0,48,140,0.24),inset_0_2px_8px_rgba(255,255,255,0.54)]`}
+      style={imageStyle}
       aria-hidden="true"
     >
-      {avatar}
+      {!imageUrl && avatar}
     </span>
   );
 }
@@ -406,20 +318,6 @@ function StarValue({ value, className = '' }: { value: string; className?: strin
       <StarIcon size={34} />
       <span>{value}</span>
     </span>
-  );
-}
-
-function HomePointsValue({ userId }: { userId: number }) {
-  const { points } = useHomePoints(String(userId), 0);
-
-  return <StarValue value={points.toLocaleString()} className="text-[25px] font-black" />;
-}
-
-function LeaderboardPointsValue({ row }: { row: LeaderboardRow }) {
-  return row.userId === undefined ? (
-    <StarValue value={row.exp} className="text-[25px] font-black" />
-  ) : (
-    <HomePointsValue userId={row.userId} />
   );
 }
 
@@ -531,7 +429,7 @@ function RankBadge({ rank }: { rank: number | string }) {
 function PlayerIdentity({ row }: { row: LeaderboardRow }) {
   return (
     <div className="flex items-center gap-8">
-      <AvatarBubble avatar={row.avatar} tone={row.avatarTone} />
+      <AvatarBubble avatar={row.avatar} tone={row.avatarTone} imageUrl={row.avatarImage} />
       <div className="flex min-w-0 items-center gap-5">
         <strong className="truncate text-[24px] font-black text-[#001ec7]">{row.name}</strong>
         <VipBadge vip={row.vip} />
@@ -542,16 +440,22 @@ function PlayerIdentity({ row }: { row: LeaderboardRow }) {
 
 function LeaderboardRowView({ row }: { row: LeaderboardRow }) {
   return (
-    <li
-      className={`${tableGridClass} h-[63px] border-b border-[#cfe2ff] bg-[#f7fbff] px-9 text-[#001ec7]`}
-    >
+    <li className={`${tableGridClass} h-[63px] border-b border-[#cfe2ff] bg-[#f7fbff] px-9 text-[#001ec7]`}>
       <div className="flex justify-center">
         <RankBadge rank={row.rank} />
       </div>
       <PlayerIdentity row={row} />
       <GemValue value={row.metricValue} className="justify-start text-[25px] font-black" />
       <span className="text-[18px] font-extrabold">{row.time}</span>
-      <LeaderboardPointsValue row={row} />
+      <StarValue value={row.exp} className="text-[25px] font-black" />
+    </li>
+  );
+}
+
+function EmptyRows() {
+  return (
+    <li className="grid h-[504px] place-items-center bg-[#f7fbff] text-[26px] font-black text-[#2456b9]">
+      暂无排行榜数据
     </li>
   );
 }
@@ -570,7 +474,7 @@ function MyRankingBar({ row }: { row: LeaderboardRow }) {
       <PlayerIdentity row={row} />
       <GemValue value={row.metricValue} className="text-[25px] font-black" />
       <span className="text-[18px] font-extrabold">{row.time}</span>
-      <LeaderboardPointsValue row={row} />
+      <StarValue value={row.exp} className="text-[25px] font-black" />
     </section>
   );
 }
@@ -578,46 +482,74 @@ function MyRankingBar({ row }: { row: LeaderboardRow }) {
 export default function LeaderboardPage() {
   const router = useRouter();
   const player = usePlayerStore(state => state.player);
-  const stats = usePlayerStore(state => state.stats);
   const isLoggedIn = usePlayerStore(state => state.isLoggedIn);
   const [activeBoard, setActiveBoard] = useState<LeaderboardType>('highestScore');
   const [isAuthPromptOpen, setIsAuthPromptOpen] = useState(false);
-  const { ranking: winsRanking } = useLeaderboardRanking(LEADERBOARD_LOOKUP_LIMIT, true, player?.id);
-  const { ranking: gamesRanking } = useLeaderboardGamesRanking(LEADERBOARD_LOOKUP_LIMIT);
+  const { ranking: highestScoreRanking } = useLeaderboardHighestScoreRanking(LEADERBOARD_LOOKUP_LIMIT);
+  const { ranking: experienceRanking } = useLeaderboardExperienceRanking(LEADERBOARD_LOOKUP_LIMIT);
+  const { ranking: winStreakRanking } = useLeaderboardWinStreakRanking(LEADERBOARD_LOOKUP_LIMIT);
+  const { ranking: winRateRanking } = useLeaderboardWinRateRanking(LEADERBOARD_LOOKUP_LIMIT);
+  const playerId = player?.id;
+  const playerNameFromStore = player?.name;
 
-  const totalWinsBoard = useMemo(
-    () => (winsRanking ? createTotalWinsBoard(winsRanking, player) : null),
-    [player, winsRanking]
+  const currentPlayer = useMemo(
+    () => (playerId && playerNameFromStore ? { id: playerId, name: playerNameFromStore } : null),
+    [playerId, playerNameFromStore]
   );
-  const totalGamesPlayer = useMemo(
-    () =>
-      player
-        ? {
-            id: player.id,
-            name: player.name,
-            totalGames: stats?.totalGames ?? player.wins + player.losses,
-          }
-        : null,
-    [player, stats?.totalGames]
-  );
-  const totalGamesBoard = useMemo(
-    () => (gamesRanking ? createTotalGamesBoard(gamesRanking, totalGamesPlayer) : null),
-    [gamesRanking, totalGamesPlayer]
-  );
-  const displayedBoards = useMemo(
+  const displayedBoards = useMemo<Record<LeaderboardType, LeaderboardBoard>>(
     () => ({
-      ...mockLeaderboardApiResponse.boards,
-      ...(totalGamesBoard ? { totalGames: totalGamesBoard } : {}),
-      ...(totalWinsBoard ? { totalWins: totalWinsBoard } : {}),
+      highestScore: highestScoreRanking
+        ? createApiBoard(
+            'highestScore',
+            '历史最高得分排行榜',
+            '历史最高得分',
+            highestScoreRanking,
+            currentPlayer,
+            item => formatNumber(item.score)
+          )
+        : createEmptyBoard('highestScore', '历史最高得分排行榜', '历史最高得分', currentPlayer),
+      experience: experienceRanking
+        ? createApiBoard(
+            'experience',
+            '投骰经验值排行榜',
+            '投骰经验值',
+            experienceRanking,
+            currentPlayer,
+            item => formatNumber(item.experience),
+            item => item.experience
+          )
+        : createEmptyBoard('experience', '投骰经验值排行榜', '投骰经验值', currentPlayer),
+      winStreak: winStreakRanking
+        ? createApiBoard(
+            'winStreak',
+            '最高连胜局数排行榜',
+            '最高连胜局数',
+            winStreakRanking,
+            currentPlayer,
+            item => formatNumber(item.streak)
+          )
+        : createEmptyBoard('winStreak', '最高连胜局数排行榜', '最高连胜局数', currentPlayer),
+      winRate: winRateRanking
+        ? createApiBoard(
+            'winRate',
+            '胜率排行榜',
+            '胜率',
+            winRateRanking,
+            currentPlayer,
+            item => formatPercent(item.win_rate),
+            undefined,
+            item => item.last_play_time
+          )
+        : createEmptyBoard('winRate', '胜率排行榜', '胜率', currentPlayer),
     }),
-    [totalGamesBoard, totalWinsBoard]
+    [currentPlayer, experienceRanking, highestScoreRanking, winRateRanking, winStreakRanking]
   );
   const activeBoardData = displayedBoards[activeBoard];
-  const displayedStatCards = useMemo(
+  const displayedStatCards = useMemo<StatCard[]>(
     () =>
       statCards.map(card => ({
         ...card,
-        value: displayedBoards[card.type].rows[0]?.metricValue ?? '0',
+        value: displayedBoards[card.type].statValue,
       })),
     [displayedBoards]
   );
@@ -650,13 +582,13 @@ export default function LeaderboardPage() {
       designHeight={1080}
       backgroundImage={leaderboardBackground.src}
     >
-        <div className={`absolute inset-0 ${leaderboardBackdropClass}`} />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_76%_30%,rgba(87,184,255,0.16),transparent_34%),linear-gradient(180deg,rgba(18,112,255,0.10)_0%,rgba(3,21,126,0.24)_100%)]" />
+      <div className={`absolute inset-0 ${leaderboardBackdropClass}`} />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_76%_30%,rgba(87,184,255,0.16),transparent_34%),linear-gradient(180deg,rgba(18,112,255,0.10)_0%,rgba(3,21,126,0.24)_100%)]" />
 
-        <IslandTopNav
-          activeItem="leaderboard"
-          rightSlot={
-            <div className="flex items-center gap-8">
+      <IslandTopNav
+        activeItem="leaderboard"
+        rightSlot={
+          <div className="flex items-center gap-8">
             <div className="flex h-[50px] items-center gap-3 rounded-full border border-white/25 bg-[#07156a]/48 pl-2 pr-5 shadow-[inset_0_2px_8px_rgba(255,255,255,0.18)] backdrop-blur">
               <span className="grid h-[44px] w-[44px] place-items-center rounded-full bg-gradient-to-b from-[#fff28b] to-[#ff9b1f] shadow-[0_6px_12px_rgba(128,70,0,0.28)]">
                 <StarIcon size={36} />
@@ -671,111 +603,114 @@ export default function LeaderboardPage() {
               onClick={handlePlayerProfileClick}
               onKeyDown={handlePlayerProfileKeyDown}
             >
-              <AvatarBubble avatar="🎲" tone="from-[#e8f7ff] to-[#56a7ff]" size="small" />
+              <AvatarBubble avatar={getAvatarText(playerName)} tone="from-[#e8f7ff] to-[#56a7ff]" imageUrl={player?.avatar} size="small" />
               <strong className="text-[22px] font-black">{playerName}</strong>
             </button>
-            </div>
-          }
-        />
-
-        {isAuthPromptOpen && (
-          <div
-            className="absolute inset-0 z-50 grid place-items-center bg-[#020d2a]/45 backdrop-blur-[6px]"
-            role="presentation"
-            onClick={() => setIsAuthPromptOpen(false)}
-          >
-            <section
-              className="w-[380px] rounded-[20px] border border-[#ffeb94]/70 bg-gradient-to-br from-white to-[#d7ebff] p-6 text-center text-[#15366f] shadow-[0_24px_48px_rgba(0,20,72,0.35),inset_0_2px_0_rgba(255,255,255,0.8)]"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="leaderboard-auth-prompt-title"
-              onClick={event => event.stopPropagation()}
-            >
-              <h2 id="leaderboard-auth-prompt-title" className="text-[23px] font-black text-[#0d4aa5]">
-                请先登录
-              </h2>
-              <p className="mt-3 text-[14px] font-bold leading-6 text-[#416494]">
-                登录或注册后可以查看个人中心、同步排行榜数据和领取奖励。
-              </p>
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  className="h-[44px] rounded-[13px] bg-gradient-to-b from-[#51b8ff] to-[#2368dc] text-[15px] font-black text-white shadow-[0_8px_16px_rgba(22,88,180,0.22)] transition-all duration-300 hover:-translate-y-[2px]"
-                  onClick={() => router.push('/login?mode=login')}
-                >
-                  登录账号
-                </button>
-                <button
-                  type="button"
-                  className="h-[44px] rounded-[13px] bg-gradient-to-b from-[#ffcb61] to-[#f3931f] text-[15px] font-black text-white shadow-[0_8px_16px_rgba(180,110,22,0.22)] transition-all duration-300 hover:-translate-y-[2px]"
-                  onClick={() => router.push('/login?mode=register')}
-                >
-                  注册账号
-                </button>
-                <button
-                  type="button"
-                  className="col-span-2 h-[42px] rounded-[13px] bg-[#2a4c7e]/75 text-[14px] font-black text-white transition-all duration-300 hover:-translate-y-[2px]"
-                  onClick={() => setIsAuthPromptOpen(false)}
-                >
-                  暂不登录
-                </button>
-              </div>
-            </section>
           </div>
-        )}
+        }
+      />
 
-        <aside
-          data-leaderboard-sidebar="true"
-          className={`absolute left-[52px] top-[202px] z-10 h-[480px] w-[315px] rounded-t-[18px] border-x border-t border-[#56b8ff]/70 bg-[linear-gradient(180deg,rgba(18,109,255,0.96)_0%,rgba(11,76,219,0.72)_44%,rgba(7,33,141,0.28)_74%,rgba(7,33,141,0)_100%)] p-3 shadow-[0_18px_38px_rgba(0,30,112,0.28),inset_0_2px_12px_rgba(255,255,255,0.18)] ${hoverLift}`}
+      {isAuthPromptOpen && (
+        <div
+          className="absolute inset-0 z-50 grid place-items-center bg-[#020d2a]/45 backdrop-blur-[6px]"
+          role="presentation"
+          onClick={() => setIsAuthPromptOpen(false)}
         >
-          <div className="grid gap-3">
-            {leaderboardMenus.map(item => (
-              <MenuItemView
-                key={item.type}
-                item={item}
-                active={item.type === activeBoard}
-                onClick={() => setActiveBoard(item.type)}
-              />
-            ))}
-          </div>
-        </aside>
-
-        <section className="absolute left-[410px] top-[126px] z-10 w-[1320px]">
-          <div className="grid grid-cols-4 gap-6">
-            {displayedStatCards.map(card => (
-              <StatCardView
-                key={card.type}
-                card={card}
-                active={card.type === activeBoard}
-                onClick={() => setActiveBoard(card.type)}
-              />
-            ))}
-          </div>
-
           <section
-            data-leaderboard-table={activeBoard}
-            className={`mt-6 h-[660px] overflow-hidden rounded-[18px] border border-white ${leaderboardTableSurfaceClass} shadow-[0_26px_58px_rgba(0,30,118,0.36),inset_0_2px_8px_rgba(255,255,255,0.72)] ${hoverLift}`}
+            className="w-[380px] rounded-[20px] border border-[#ffeb94]/70 bg-gradient-to-br from-white to-[#d7ebff] p-6 text-center text-[#15366f] shadow-[0_24px_48px_rgba(0,20,72,0.35),inset_0_2px_0_rgba(255,255,255,0.8)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leaderboard-auth-prompt-title"
+            onClick={event => event.stopPropagation()}
           >
-            <div
-              className={`${tableGridClass} h-[70px] bg-gradient-to-r from-[#e4f2ff] via-[#dcebff] to-[#d6e9ff] px-9 text-[20px] font-black text-[#0024bf] shadow-[inset_0_-1px_0_rgba(92,143,216,0.18)]`}
-            >
-              <span className="text-center">排名</span>
-              <span>玩家昵称</span>
-              <span>{activeBoardData.metricLabel}</span>
-              <span>达成时间</span>
-              <span>投骰经验值</span>
+            <h2 id="leaderboard-auth-prompt-title" className="text-[23px] font-black text-[#0d4aa5]">
+              请先登录
+            </h2>
+            <p className="mt-3 text-[14px] font-bold leading-6 text-[#416494]">
+              登录或注册后可以查看个人中心、同步排行榜数据和领取奖励。
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                className="h-[44px] rounded-[13px] bg-gradient-to-b from-[#51b8ff] to-[#2368dc] text-[15px] font-black text-white shadow-[0_8px_16px_rgba(22,88,180,0.22)] transition-all duration-300 hover:-translate-y-[2px]"
+                onClick={() => router.push('/login?mode=login')}
+              >
+                登录账号
+              </button>
+              <button
+                type="button"
+                className="h-[44px] rounded-[13px] bg-gradient-to-b from-[#ffcb61] to-[#f3931f] text-[15px] font-black text-white shadow-[0_8px_16px_rgba(180,110,22,0.22)] transition-all duration-300 hover:-translate-y-[2px]"
+                onClick={() => router.push('/login?mode=register')}
+              >
+                注册账号
+              </button>
+              <button
+                type="button"
+                className="col-span-2 h-[42px] rounded-[13px] bg-[#2a4c7e]/75 text-[14px] font-black text-white transition-all duration-300 hover:-translate-y-[2px]"
+                onClick={() => setIsAuthPromptOpen(false)}
+              >
+                暂不登录
+              </button>
             </div>
-
-            <ol>
-              {activeBoardData.rows.map(row => (
-                <LeaderboardRowView key={`${activeBoard}-${row.rank}`} row={row} />
-              ))}
-            </ol>
-
-            <MyRankingBar row={activeBoardData.myRanking} />
           </section>
-        </section>
+        </div>
+      )}
 
+      <aside
+        data-leaderboard-sidebar="true"
+        className={`absolute left-[52px] top-[202px] z-10 h-[480px] w-[315px] rounded-t-[18px] border-x border-t border-[#56b8ff]/70 bg-[linear-gradient(180deg,rgba(18,109,255,0.96)_0%,rgba(11,76,219,0.72)_44%,rgba(7,33,141,0.28)_74%,rgba(7,33,141,0)_100%)] p-3 shadow-[0_18px_38px_rgba(0,30,112,0.28),inset_0_2px_12px_rgba(255,255,255,0.18)] ${hoverLift}`}
+      >
+        <div className="grid gap-3">
+          {leaderboardMenus.map(item => (
+            <MenuItemView
+              key={item.type}
+              item={item}
+              active={item.type === activeBoard}
+              onClick={() => setActiveBoard(item.type)}
+            />
+          ))}
+        </div>
+      </aside>
+
+      <section className="absolute left-[410px] top-[126px] z-10 w-[1320px]">
+        <div className="grid grid-cols-4 gap-6">
+          {displayedStatCards.map(card => (
+            <StatCardView
+              key={card.type}
+              card={card}
+              active={card.type === activeBoard}
+              onClick={() => setActiveBoard(card.type)}
+            />
+          ))}
+        </div>
+
+        <section
+          data-leaderboard-table={activeBoard}
+          className={`mt-6 h-[660px] overflow-hidden rounded-[18px] border border-white ${leaderboardTableSurfaceClass} shadow-[0_26px_58px_rgba(0,30,118,0.36),inset_0_2px_8px_rgba(255,255,255,0.72)] ${hoverLift}`}
+        >
+          <div
+            className={`${tableGridClass} h-[70px] bg-gradient-to-r from-[#e4f2ff] via-[#dcebff] to-[#d6e9ff] px-9 text-[20px] font-black text-[#0024bf] shadow-[inset_0_-1px_0_rgba(92,143,216,0.18)]`}
+          >
+            <span className="text-center">排名</span>
+            <span>玩家昵称</span>
+            <span>{activeBoardData.metricLabel}</span>
+            <span>达成时间</span>
+            <span>投骰经验值</span>
+          </div>
+
+          <ol>
+            {activeBoardData.rows.length > 0 ? (
+              activeBoardData.rows.map(row => (
+                <LeaderboardRowView key={`${activeBoard}-${row.rank}-${row.userId ?? row.name}`} row={row} />
+              ))
+            ) : (
+              <EmptyRows />
+            )}
+          </ol>
+
+          <MyRankingBar row={activeBoardData.myRanking} />
+        </section>
+      </section>
     </ResponsiveStage>
   );
 }

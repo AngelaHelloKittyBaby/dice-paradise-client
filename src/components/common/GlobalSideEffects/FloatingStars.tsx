@@ -99,7 +99,14 @@ export function FloatingStars({ side }: { side: EffectSide }) {
               ease: 'easeInOut',
             }}
           >
-            <Image src={starImage} alt="" fill sizes={`${displaySize}px`} className={styles.effectImage} draggable={false} />
+            <Image
+              src={starImage}
+              alt=""
+              fill
+              sizes={`${displaySize}px`}
+              className={styles.effectImage}
+              draggable={false}
+            />
           </motion.span>
         );
       })}

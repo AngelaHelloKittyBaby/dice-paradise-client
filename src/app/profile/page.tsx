@@ -160,7 +160,6 @@ export default function ProfilePage() {
         onClose={() => setSelectedRecord(null)}
         allowOverlayDismiss
         showActions={false}
-        showAutoSave={false}
       />
     </ResponsiveStage>
   );

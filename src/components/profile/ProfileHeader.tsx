@@ -14,7 +14,7 @@ export function ProfileHeader({ user }: ProfileHeaderProps) {
 
   return (
     <section className="relative h-[322px] overflow-hidden rounded-[32px] border-2 border-[#76d8ff]/80 shadow-[0_24px_60px_rgba(0,56,160,0.34),0_0_28px_rgba(92,199,255,0.5)]">
-      <Image src={userInfoBackground} alt="" fill priority className="object-cover" />
+      <Image src={userInfoBackground} alt="" fill className="object-cover" />
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(237,249,255,0.78)_0%,rgba(235,247,255,0.42)_42%,rgba(255,255,255,0.04)_100%)]" />
 
       <div className="relative z-10 flex h-full items-center px-[46px]">

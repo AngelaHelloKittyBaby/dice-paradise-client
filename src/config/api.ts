@@ -1,6 +1,6 @@
 const API_VERSION_PATH = '/api/v1';
-const DEFAULT_API_ORIGIN = 'http://192.168.21.17:8000';
-const DEFAULT_WS_URL = 'ws://192.168.21.17:8000';
+const DEFAULT_API_ORIGIN = 'http://192.168.21.14:8000';
+const DEFAULT_WS_URL = 'ws://192.168.21.14:8000';
 
 export function normalizeApiBaseUrl(baseUrl?: string) {
   const normalizedUrl = (baseUrl?.trim() || `${DEFAULT_API_ORIGIN}${API_VERSION_PATH}`).replace(/\/+$/, '');

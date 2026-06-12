@@ -1,107 +1,98 @@
 import { useEffect, useState } from 'react';
-import { getLeaderboardGamesRanking, getLeaderboardRanking } from '@/modules/leaderboard/leaderboardApi';
-import type { LeaderboardGamesRankingData, LeaderboardRankingData } from '@/types/leaderboardApi';
+import {
+  getLeaderboardExperience,
+  getLeaderboardHighestScore,
+  getLeaderboardWinRate,
+  getLeaderboardWinStreak,
+} from '@/modules/leaderboard/leaderboardApi';
+import type {
+  LeaderboardExperienceData,
+  LeaderboardHighestScoreData,
+  LeaderboardItemBaseData,
+  LeaderboardListData,
+  LeaderboardWinRateData,
+  LeaderboardWinStreakData,
+} from '@/types/leaderboardApi';
 
-interface UseLeaderboardRankingResult {
-  ranking: LeaderboardRankingData | null;
+interface UseLeaderboardRankingResult<TItem extends LeaderboardItemBaseData> {
+  ranking: LeaderboardListData<TItem> | null;
   isLoading: boolean;
   error: string | null;
 }
 
-export function useLeaderboardRanking(
+function useLeaderboardData<TItem extends LeaderboardItemBaseData>(
+  request: (limit: number) => Promise<LeaderboardListData<TItem>>,
+  limit: number,
+  enabled: boolean,
+  errorMessage: string
+): UseLeaderboardRankingResult<TItem> {
+  const [ranking, setRanking] = useState<LeaderboardListData<TItem> | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (!enabled) {
+      setIsLoading(false);
+      setError(null);
+      return () => {
+        isActive = false;
+      };
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    request(limit)
+      .then(nextRanking => {
+        if (!isActive) return;
+        setRanking(nextRanking);
+      })
+      .catch(requestError => {
+        if (!isActive) return;
+        setError(requestError instanceof Error ? requestError.message : errorMessage);
+      })
+      .finally(() => {
+        if (isActive) setIsLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [enabled, errorMessage, limit, request]);
+
+  return {
+    ranking,
+    isLoading,
+    error,
+  };
+}
+
+export function useLeaderboardHighestScoreRanking(
   limit = 10,
-  enabled = true,
-  userId?: string | null
-): UseLeaderboardRankingResult {
-  const [ranking, setRanking] = useState<LeaderboardRankingData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let isActive = true;
-
-    if (!enabled) {
-      setIsLoading(false);
-      setError(null);
-      return () => {
-        isActive = false;
-      };
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    getLeaderboardRanking(limit, userId)
-      .then(nextRanking => {
-        if (!isActive) return;
-        setRanking(nextRanking);
-      })
-      .catch(requestError => {
-        if (!isActive) return;
-        setError(requestError instanceof Error ? requestError.message : '获取排行榜失败');
-      })
-      .finally(() => {
-        if (isActive) setIsLoading(false);
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [enabled, limit, userId]);
-
-  return {
-    ranking,
-    isLoading,
-    error,
-  };
+  enabled = true
+): UseLeaderboardRankingResult<LeaderboardHighestScoreData['leaderboard'][number]> {
+  return useLeaderboardData(getLeaderboardHighestScore, limit, enabled, '获取历史最高分排行榜失败');
 }
 
-interface UseLeaderboardGamesRankingResult {
-  ranking: LeaderboardGamesRankingData | null;
-  isLoading: boolean;
-  error: string | null;
+export function useLeaderboardExperienceRanking(
+  limit = 10,
+  enabled = true
+): UseLeaderboardRankingResult<LeaderboardExperienceData['leaderboard'][number]> {
+  return useLeaderboardData(getLeaderboardExperience, limit, enabled, '获取投骰经验值排行榜失败');
 }
 
-export function useLeaderboardGamesRanking(limit = 10, enabled = true): UseLeaderboardGamesRankingResult {
-  const [ranking, setRanking] = useState<LeaderboardGamesRankingData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function useLeaderboardWinStreakRanking(
+  limit = 10,
+  enabled = true
+): UseLeaderboardRankingResult<LeaderboardWinStreakData['leaderboard'][number]> {
+  return useLeaderboardData(getLeaderboardWinStreak, limit, enabled, '获取最高连胜局数排行榜失败');
+}
 
-  useEffect(() => {
-    let isActive = true;
-
-    if (!enabled) {
-      setIsLoading(false);
-      setError(null);
-      return () => {
-        isActive = false;
-      };
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    getLeaderboardGamesRanking(limit)
-      .then(nextRanking => {
-        if (!isActive) return;
-        setRanking(nextRanking);
-      })
-      .catch(requestError => {
-        if (!isActive) return;
-        setError(requestError instanceof Error ? requestError.message : '获取总对局排行榜失败');
-      })
-      .finally(() => {
-        if (isActive) setIsLoading(false);
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [enabled, limit]);
-
-  return {
-    ranking,
-    isLoading,
-    error,
-  };
+export function useLeaderboardWinRateRanking(
+  limit = 10,
+  enabled = true
+): UseLeaderboardRankingResult<LeaderboardWinRateData['leaderboard'][number]> {
+  return useLeaderboardData(getLeaderboardWinRate, limit, enabled, '获取胜率排行榜失败');
 }

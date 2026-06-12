@@ -74,7 +74,6 @@ export function RoomHallModal({
                 fill
                 sizes="888px"
                 className="pointer-events-none object-contain"
-                priority
               />
 
               <motion.p

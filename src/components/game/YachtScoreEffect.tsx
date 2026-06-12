@@ -125,7 +125,6 @@ export function YachtScoreEffect({ triggerKey }: YachtScoreEffectProps) {
                 width={760}
                 height={500}
                 draggable={false}
-                priority
               />
               <Image
                 src={waveArt}
@@ -134,7 +133,6 @@ export function YachtScoreEffect({ triggerKey }: YachtScoreEffectProps) {
                 width={760}
                 height={500}
                 draggable={false}
-                priority
               />
               <Image
                 src={waveArt}
@@ -143,7 +141,6 @@ export function YachtScoreEffect({ triggerKey }: YachtScoreEffectProps) {
                 width={640}
                 height={360}
                 draggable={false}
-                priority
               />
               <div className={styles.sparkleField}>
                 {sparkleItems.map(item => (
@@ -164,7 +161,6 @@ export function YachtScoreEffect({ triggerKey }: YachtScoreEffectProps) {
                 width={620}
                 height={360}
                 draggable={false}
-                priority
               />
             </motion.div>
           </motion.div>

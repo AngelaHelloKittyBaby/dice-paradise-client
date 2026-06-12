@@ -1,5 +1,3 @@
-'use client';
-
 import React from 'react';
 import type { CSSProperties } from 'react';
 import clsx from 'clsx';
@@ -26,7 +24,7 @@ export const Loading: React.FC<LoadingProps> = ({
 
   const content = (
     <div className="flex flex-col items-center justify-center gap-4">
-      <LoadingImage size={resolvedImageSize} priority={fullScreen} style={fullScreenImageStyle} />
+      <LoadingImage size={resolvedImageSize} style={fullScreenImageStyle} />
       {text && (
         <p className={clsx(
           fullScreen

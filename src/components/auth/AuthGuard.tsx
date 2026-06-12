@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loading } from '@/components/ui';
 import { isInvalidAuthTokenError, verifyAuthToken } from '@/modules/auth/authApi';
 import { usePlayerStore } from '@/stores';
 
-const protectedRoutes = ['/', '/game', '/room', '/profile', '/result', '/activity', '/leaderboard'];
+const protectedRoutes = ['/', '/game', '/room', '/profile', '/result', '/activity'];
 const authRoutes = ['/login'];
 
 function isRouteMatch(pathname: string, route: string) {
@@ -98,14 +98,25 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     isProtectedRoute: protectedRoutes.some(route => isRouteMatch(pathname, route)),
   }), [pathname]);
 
+  const mountedRef = useRef(true);
+
   useEffect(() => {
+    mountedRef.current = true;
+
     if (usePlayerStore.persist.hasHydrated()) {
       setIsHydrated(true);
     }
 
-    return usePlayerStore.persist.onFinishHydration(() => {
-      setIsHydrated(true);
+    const unsubscribe = usePlayerStore.persist.onFinishHydration(() => {
+      if (mountedRef.current) {
+        setIsHydrated(true);
+      }
     });
+
+    return () => {
+      mountedRef.current = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -122,17 +133,22 @@ export function AuthGuard({ children }: { children: ReactNode }) {
       return;
     }
 
-    let isCancelled = false;
+    const abortController = new AbortController();
 
     verifyAuthToken({
       token: normalizedAuthToken,
       tokenType,
+      signal: abortController.signal,
     })
       .then(() => {
-        if (!isCancelled) setVerifiedAuthKey(authVerificationKey);
+        if (mountedRef.current) {
+          setVerifiedAuthKey(authVerificationKey);
+        }
       })
       .catch(error => {
-        if (isCancelled) return;
+        if (!mountedRef.current) return;
+
+        if (error.name === 'AbortError') return;
 
         if (isInvalidAuthTokenError(error)) {
           setVerifiedAuthKey(null);
@@ -145,7 +161,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
       });
 
     return () => {
-      isCancelled = true;
+      abortController.abort();
     };
   }, [
     authVerificationKey,

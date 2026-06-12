@@ -1,6 +1,6 @@
-﻿'use client';
+'use client';
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import Image, { type StaticImageData } from 'next/image';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -41,25 +41,27 @@ import doubaoImage from '@/assets/images/ui/panels/doubao.png';
 import kimiImage from '@/assets/images/ui/panels/kimi.png';
 import { ResponsiveStage } from '@/components/layout';
 import { GameChat, LoadingImage, SoundToggle, StarIcon, type GameChatMessage } from '@/components/ui';
-import { useHomePoints, useHomeSoundSetting } from '@/hooks';
+import { useChatSocket, useHomePoints, useHomeSoundSetting } from '@/hooks';
 import { getRoomApiErrorMessage } from '@/modules/room/roomApi';
 import { usePlayerStore, useRoomStore } from '@/stores';
+import type { ChatSocketChatMessage, ChatSocketSystemMessage } from '@/types/chatSocket';
 import type { ApiGameMode } from '@/types/gameApi';
+import { getOrCreateClientId } from '@/utils/clientId';
 import styles from './home-lobby.module.css';
 
 const LobbyAmbientEffects = dynamic(
   () => import('@/components/layout/LobbyAmbientEffects').then(module => module.LobbyAmbientEffects),
-  { ssr: false }
+  { ssr: false, loading: () => null }
 );
 
 const RoomHallModal = dynamic(
   () => import('@/components/game/RoomHallModal').then(module => module.RoomHallModal),
-  { ssr: false }
+  { ssr: false, loading: () => null }
 );
 
 const JoinRoomModal = dynamic(
   () => import('@/components/game/JoinRoomModal').then(module => module.JoinRoomModal),
-  { ssr: false }
+  { ssr: false, loading: () => null }
 );
 
 interface ActionCard {
@@ -218,7 +220,9 @@ const dailyTasks: DailyTask[] = [
   },
 ];
 
-const chatMessages: GameChatMessage[] = [
+const HOME_CHAT_MESSAGE_LIMIT = 80;
+
+const initialChatMessages: GameChatMessage[] = [
   { id: 'home-system-1', type: 'system', author: '系统消息', text: '排行榜奖励将在今晚 22:00 结算。' },
   { id: 'home-system-2', type: 'system', author: '系统消息', text: '每日任务已刷新，记得领取奖励。' },
   { id: 'home-player-1', type: 'player', author: '骰子达人', text: '刚刚开了房间，等两位一起上船。' },
@@ -266,6 +270,8 @@ export default function HomePage() {
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [isFetchingRoomList, setIsFetchingRoomList] = useState(false);
   const [gameCreateError, setGameCreateError] = useState<string | null>(null);
+  const [homeChatMessages, setHomeChatMessages] = useState(initialChatMessages);
+  const [homeGuestChatPlayerId] = useState(() => getOrCreateClientId());
 
   const playerName = player?.name ?? '涔愪箰鐜╁';
   const playerLevel = player?.level ?? 28;
@@ -277,6 +283,62 @@ export default function HomePage() {
   );
   const hasUserSession = Boolean(isLoggedIn && player && authToken?.trim());
   const playerAvatar = hasUserSession && player?.avatar ? player.avatar : defaultAvatar.src;
+  const homeChatPlayerId = player?.id ?? homeGuestChatPlayerId;
+
+  const appendHomeChatMessage = useCallback((message: GameChatMessage) => {
+    setHomeChatMessages(currentMessages => [...currentMessages, message].slice(-HOME_CHAT_MESSAGE_LIMIT));
+  }, []);
+
+  const handleHomeChatSocketMessage = useCallback(
+    (message: ChatSocketChatMessage) => {
+      appendHomeChatMessage({
+        id: `home-chat-${message.timestamp}-${message.playerId}-${message.message}`,
+        type: 'player',
+        author: message.playerName,
+        avatar: message.avatar,
+        text: message.message,
+      });
+    },
+    [appendHomeChatMessage]
+  );
+
+  const handleHomeChatSystemMessage = useCallback(
+    (message: ChatSocketSystemMessage) => {
+      appendHomeChatMessage({
+        id: `home-system-${message.timestamp}-${message.action ?? 'message'}-${message.playerId}`,
+        type: 'system',
+        author: '系统消息',
+        text: message.message,
+      });
+    },
+    [appendHomeChatMessage]
+  );
+
+  const { isConnected: isHomeChatConnected, sendChat: sendHomeChat } = useChatSocket({
+    channel: 'lobby',
+    playerId: homeChatPlayerId,
+    enabled: Boolean(homeChatPlayerId),
+    onChatMessage: handleHomeChatSocketMessage,
+    onSystemMessage: handleHomeChatSystemMessage,
+  });
+
+  const handleSendHomeChatMessage = useCallback(
+    (message: string) => {
+      const isSent = sendHomeChat(message);
+
+      if (!isSent) {
+        appendHomeChatMessage({
+          id: `home-chat-offline-${Date.now()}`,
+          type: 'system',
+          author: '系统消息',
+          text: '聊天连接恢复中，请稍后再试',
+        });
+      }
+
+      return isSent;
+    },
+    [appendHomeChatMessage, sendHomeChat]
+  );
 
   useEffect(() => {
     const prefetchTimer = window.setTimeout(() => {
@@ -962,9 +1024,11 @@ export default function HomePage() {
       <GameChat
         className={styles.chatDock}
         ariaLabel="聊天窗口"
-        messages={chatMessages}
+        messages={homeChatMessages}
         currentUserName={playerName}
         currentUserAvatar={playerAvatar}
+        placeholder={isHomeChatConnected ? '说点什么...' : '聊天连接中...'}
+        onSendMessage={handleSendHomeChatMessage}
         defaultHeight={196}
         minHeight={170}
         maxHeight={340}

@@ -191,7 +191,7 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
       >
         <div className={styles.brandMark} aria-label="投骰乐园">
           <span className={styles.logoDice}>
-            <Image src={diceIcon} alt="" width={50} height={50} priority />
+            <Image src={diceIcon} alt="" width={50} height={50} />
           </span>
           <span>
             投骰乐园

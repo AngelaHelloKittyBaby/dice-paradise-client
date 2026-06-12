@@ -6,9 +6,6 @@ export { Footer } from './Footer';
 export { PageContainer } from './PageContainer';
 export type { PageContainerProps } from './PageContainer';
 
-export { GameLayout } from './GameLayout';
-export type { GameLayoutProps } from './GameLayout';
-
 export { ResponsiveStage } from './ResponsiveStage';
 export type { ResponsiveStageProps } from './ResponsiveStage';
 

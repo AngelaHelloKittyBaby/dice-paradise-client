@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
@@ -38,11 +38,13 @@ import {
   getSettlementResultData,
   rematchSettlementGame,
 } from '@/modules/result/settlementApi';
-import { updateLeaderboardGames, updateLeaderboardWins } from '@/modules/leaderboard/leaderboardApi';
+import { settleLeaderboardGame, updateLeaderboardGames } from '@/modules/leaderboard/leaderboardApi';
 import { usePlayerStore, useRoomStore } from '@/stores';
+import type { ChatSocketChatMessage, ChatSocketSystemMessage } from '@/types/chatSocket';
 import type { DiceValue, ScoreCategory } from '@/types/game';
 import type { ApiGameMode, GameStatusSnapshot } from '@/types/gameApi';
 import type { GameResultData } from '@/types/gameResult';
+import type { LeaderboardUpdateGamesMode } from '@/types/leaderboardApi';
 import type { PossibleScoreSnapshot, ScoreLockStatusSnapshot, ScorePanelPlayerSnapshot } from '@/types/scoreApi';
 import {
   calculateGrandTotal,
@@ -55,17 +57,17 @@ import styles from './game.module.css';
 
 const GameResultModal = dynamic(
   () => import('@/components/game/GameResultModal').then(module => module.GameResultModal),
-  { ssr: false }
+  { ssr: false, loading: () => null }
 );
 
 const GameRulesModal = dynamic(
   () => import('@/components/game/GameRulesModal').then(module => module.GameRulesModal),
-  { ssr: false }
+  { ssr: false, loading: () => null }
 );
 
 const YachtScoreEffect = dynamic(
   () => import('@/components/game/YachtScoreEffect').then(module => module.YachtScoreEffect),
-  { ssr: false }
+  { ssr: false, loading: () => null }
 );
 
 interface GamePlayer {
@@ -94,11 +96,19 @@ interface GameQueryState {
   pendingCreate: boolean;
 }
 
+interface ExperienceRewardState {
+  value: number | null;
+  status: 'saving' | 'saved' | 'error';
+  totalExperience: number | null;
+  error: string | null;
+}
+
 const initialDice: DiceValue[] = [1, 1, 1, 1, 1];
 const initialLocked = [false, false, false, false, false];
 const DICE_THROW_ANIMATION_MS = 1120;
 const GAME_FALLBACK_SYNC_INTERVAL_MS = 5_000;
 const RESULT_OPEN_DELAY_MS = 420;
+const GAME_CHAT_MESSAGE_LIMIT = 80;
 
 const avatarClasses = [
   styles.avatarCaptain,
@@ -110,7 +120,6 @@ const avatarClasses = [
 ];
 
 const defaultGameEvents: GameEventItem[] = [];
-const emptyChatMessages: GameChatMessage[] = [];
 
 function delay(ms: number) {
   return new Promise(resolve => {
@@ -177,8 +186,28 @@ function toOptionalBackendPlayerId(playerId: string) {
   return Number.isInteger(backendPlayerId) ? backendPlayerId : null;
 }
 
+function toOptionalInteger(value: string | number | null | undefined) {
+  const numericValue = Number(value);
+
+  return Number.isInteger(numericValue) ? numericValue : null;
+}
+
 function isApiGameMode(mode: string): mode is ApiGameMode {
   return mode === 'local' || mode === 'ai' || mode === 'online';
+}
+
+function toLeaderboardGameMode(mode: string | null | undefined) {
+  if (mode === 'ai') return 2;
+  if (mode === 'online' || mode === 'room') return 3;
+
+  return 1;
+}
+
+function toLeaderboardUpdateGamesMode(mode: string | null | undefined): LeaderboardUpdateGamesMode {
+  if (mode === 'ai') return 'ai';
+  if (mode === 'online' || mode === 'room') return 'online';
+
+  return 'local';
 }
 
 function getDiceDots(value: DiceValue) {
@@ -445,6 +474,7 @@ export default function GamePage() {
   const [playerScores, setPlayerScores] = useState<Partial<Record<ScoreCategory, number>>>({});
   const [scorePanelPlayers, setScorePanelPlayers] = useState<ScorePanelPlayerSnapshot[]>([]);
   const [gameEvents, setGameEvents] = useState<GameEventItem[]>(defaultGameEvents);
+  const [gameChatMessages, setGameChatMessages] = useState<GameChatMessage[]>([]);
   const [yachtEffectKey, setYachtEffectKey] = useState(0);
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
   const [isRematching, setIsRematching] = useState(false);
@@ -452,11 +482,13 @@ export default function GamePage() {
   const [isSettlementLoading, setIsSettlementLoading] = useState(false);
   const [settlementResultData, setSettlementResultData] = useState<GameResultData | null>(null);
   const [resultActionError, setResultActionError] = useState<string | null>(null);
+  const [experienceReward, setExperienceReward] = useState<ExperienceRewardState | null>(null);
   const serverGameStatusRef = useRef<GameStatusSnapshot | null>(null);
   const rollingGuardRef = useRef(false);
   const scoreSubmittingGuardRef = useRef(false);
   const entryCreateGuardRef = useRef(false);
-  const reportedWinnerGameIdRef = useRef<string | null>(null);
+  const reportedGameSettleKeyRef = useRef<string | null>(null);
+  const reportedLeaderboardGamesKeyRef = useRef<string | null>(null);
   const { soundEnabled: isSoundEnabled, setSoundEnabled: setIsSoundEnabled } = useHomeSoundSetting(
     player?.id,
     soundSettingFallback
@@ -545,6 +577,7 @@ export default function GamePage() {
   const hasAuthToken = Boolean(authToken?.trim());
   const isSingleMode = isLocalMode && !queryState.roomId;
   const isRoomGame = Boolean(queryState.roomId && currentRoom);
+  const roomMembers = useMemo(() => currentRoom?.members ?? [], [currentRoom?.members]);
   const showChat = isRoomGame || mode === 'online';
   const hasRolledCurrentTurn = hasRolledDiceThisTurn(rollsLeft);
   const displayedPossibleScores = useMemo<PossibleScoreSnapshot>(
@@ -813,6 +846,9 @@ export default function GamePage() {
     setIsResultOpen(false);
     setResultActionError(null);
     setSettlementResultData(null);
+    setExperienceReward(null);
+    reportedGameSettleKeyRef.current = null;
+    reportedLeaderboardGamesKeyRef.current = null;
     setDice(initialDice);
     setLocked(initialLocked);
     setRollsLeft(MAX_ROLLS_PER_TURN);
@@ -909,6 +945,8 @@ export default function GamePage() {
     entryCreateGuardRef.current = true;
     setEntryGameCreateError(null);
 
+    let isCancelled = false;
+
     createGame({
       game_mode: gameMode,
       player_name: selfPlayerName,
@@ -917,6 +955,8 @@ export default function GamePage() {
       client_id: gameMode === 'ai' && !hasAuthToken ? getOrCreateClientId() : undefined,
     })
       .then(game => {
+        if (isCancelled) return;
+
         const params = new URLSearchParams({
           mode: gameMode,
           gameId: game.gameId,
@@ -937,9 +977,15 @@ export default function GamePage() {
         router.replace(`/game?${params.toString()}`);
       })
       .catch(error => {
+        if (isCancelled) return;
+
         entryCreateGuardRef.current = false;
         setEntryGameCreateError(error instanceof Error ? error.message : '游戏创建失败，请稍后再试');
       });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [
     isQueryReady,
     queryState.difficulty,
@@ -1002,12 +1048,90 @@ export default function GamePage() {
     [applyGameStatusSnapshot, queryState.gameId, refreshScoreBoard, selfPlayerId]
   );
 
-  const { isConnected: isGameSocketConnected } = useGameSocket({
+  const appendGameChatMessage = useCallback((message: GameChatMessage) => {
+    setGameChatMessages(currentMessages => [...currentMessages, message].slice(-GAME_CHAT_MESSAGE_LIMIT));
+  }, []);
+
+  const handleGameSocketChatMessage = useCallback(
+    (message: ChatSocketChatMessage) => {
+      const chatPlayer = players.find(item => item.id === message.playerId);
+      const roomMember = roomMembers.find(member => member.playerId === message.playerId);
+
+      appendGameChatMessage({
+        id: `game-chat-${message.timestamp}-${message.playerId}-${message.message}`,
+        type: 'player',
+        author: message.playerName || chatPlayer?.name,
+        avatar: message.avatar ?? roomMember?.avatar ?? (message.playerId === selfPlayerId ? player?.avatar : undefined),
+        text: message.message,
+      });
+    },
+    [appendGameChatMessage, player?.avatar, players, roomMembers, selfPlayerId]
+  );
+
+  const handleGameSocketSystemMessage = useCallback(
+    (message: ChatSocketSystemMessage) => {
+      const actionText =
+        message.action === 'player_joined'
+          ? `${message.playerName} 加入了对局`
+          : message.action === 'player_left'
+            ? `${message.playerName} 离开了对局`
+            : message.action === 'game_started'
+              ? '对局已开始'
+              : message.message;
+
+      appendGameChatMessage({
+        id: `game-system-${message.timestamp}-${message.action ?? 'message'}-${message.playerId}`,
+        type: 'system',
+        author: '系统消息',
+        text: actionText,
+      });
+    },
+    [appendGameChatMessage]
+  );
+
+  const handleGameSocketError = useCallback(
+    (message: string) => {
+      appendGameChatMessage({
+        id: `game-chat-error-${Date.now()}`,
+        type: 'system',
+        author: '系统消息',
+        text: message,
+      });
+    },
+    [appendGameChatMessage]
+  );
+
+  const { isConnected: isGameSocketConnected, sendChat: sendGameChat } = useGameSocket({
     gameId: queryState.gameId,
     playerId: selfPlayerId,
     enabled: Boolean(queryState.gameId && selfPlayerId),
     onGameStatus: handleSocketGameStatus,
+    onChatMessage: handleGameSocketChatMessage,
+    onSystemMessage: handleGameSocketSystemMessage,
+    onSocketError: handleGameSocketError,
   });
+
+  const handleSendGameChatMessage = useCallback(
+    (message: string) => {
+      const isSent = sendGameChat(message);
+
+      if (!isSent) {
+        appendGameChatMessage({
+          id: `game-chat-offline-${Date.now()}`,
+          type: 'system',
+          author: '系统消息',
+          text: '游戏聊天连接恢复中，请稍后再试',
+        });
+      }
+
+      return isSent;
+    },
+    [appendGameChatMessage, sendGameChat]
+  );
+
+  useEffect(() => {
+    setGameChatMessages([]);
+  }, [queryState.gameId, roomId]);
 
   useEffect(() => {
     const gameId = queryState.gameId;
@@ -1124,32 +1248,109 @@ export default function GamePage() {
 
   useEffect(() => {
     const gameId = queryState.gameId;
+    const numericGameId = toOptionalInteger(gameId);
     const currentGamePlayerId = toOptionalBackendPlayerId(selfPlayerId);
     const currentUserId = player?.id ? toOptionalBackendPlayerId(player.id) : null;
-    const gameMode = isApiGameMode(queryState.mode) ? queryState.mode : 'local';
-    const winner = settlementResultData?.players.find(item => item.rank === 1);
+    const rewardResultData = gameId ? settlementResultData : null;
+    const resultPlayer =
+      !rewardResultData
+        ? undefined
+        : rewardResultData.players.find(item => item.isOwner || item.id === currentGamePlayerId);
+    const winner = rewardResultData?.players.find(item => item.rank === 1);
+    const winnerUserId = winner ? toOptionalInteger(winner.id) : null;
+    const settlePlayers = rewardResultData?.players
+      .map(item => ({
+        user_id: item.id,
+        rank: item.rank,
+        total_score: item.score,
+      }))
+      .filter(
+        item =>
+          Number.isInteger(item.user_id) &&
+          Number.isInteger(item.rank) &&
+          Number.isInteger(item.total_score)
+      );
+    const gameMode = serverGameStatus?.gameMode ??
+      (isApiGameMode(queryState.mode) ? queryState.mode : queryState.roomId ? 'online' : 'local');
+    const updateGamesMode = toLeaderboardUpdateGamesMode(gameMode);
+    const reportKey = numericGameId !== null && currentUserId !== null ? `user:${currentUserId}:game:${numericGameId}` : null;
 
     if (
       !isResultOpen ||
-      !gameId ||
-      !winner ||
-      currentGamePlayerId === null ||
-      currentUserId === null ||
-      winner.id !== currentGamePlayerId ||
-      reportedWinnerGameIdRef.current === gameId
+      !rewardResultData ||
+      !resultPlayer ||
+      !reportKey ||
+      !settlePlayers ||
+      settlePlayers.length < 2 ||
+      settlePlayers.length > 4 ||
+      numericGameId === null ||
+      currentUserId === null
     ) {
       return;
     }
 
-    reportedWinnerGameIdRef.current = gameId;
+    if (reportedGameSettleKeyRef.current === reportKey) return;
 
-    void Promise.all([
-      updateLeaderboardWins(currentUserId, gameMode),
-      updateLeaderboardGames(currentUserId, gameMode),
-    ]).catch(error => {
-      console.error('[updateLeaderboard] 更新排行榜数据失败:', error);
+    reportedGameSettleKeyRef.current = reportKey;
+    if (
+      updateGamesMode !== 'local' &&
+      winnerUserId !== null &&
+      (winnerUserId === currentGamePlayerId || winnerUserId === currentUserId)
+    ) {
+      const updateGamesKey = `winner:${winnerUserId}:game:${numericGameId}`;
+
+      if (reportedLeaderboardGamesKeyRef.current !== updateGamesKey) {
+        reportedLeaderboardGamesKeyRef.current = updateGamesKey;
+        void updateLeaderboardGames(winnerUserId, updateGamesMode).catch(error => {
+          console.error('[updateLeaderboardGames] 更新总对局次数失败:', error);
+        });
+      }
+    }
+
+    setExperienceReward({
+      value: null,
+      status: 'saving',
+      totalExperience: null,
+      error: null,
     });
-  }, [isResultOpen, player?.id, queryState.gameId, queryState.mode, selfPlayerId, settlementResultData]);
+
+    void settleLeaderboardGame({
+      game_id: numericGameId,
+      game_mode: toLeaderboardGameMode(gameMode),
+      players: settlePlayers,
+    })
+      .then(data => {
+        const currentResult =
+          data.results.find(item => item.user_id === currentUserId) ??
+          data.results.find(item => item.user_id === resultPlayer.id);
+
+        setExperienceReward({
+          value: currentResult?.total_experience ?? 0,
+          status: 'saved',
+          totalExperience: currentResult?.new_experience ?? null,
+          error: null,
+        });
+      })
+      .catch(error => {
+        const message = error instanceof Error ? error.message : '游戏结算失败';
+        setExperienceReward({
+          value: null,
+          status: 'error',
+          totalExperience: null,
+          error: message,
+        });
+        console.error('[settleLeaderboardGame] 游戏结算失败:', error);
+      });
+  }, [
+    isResultOpen,
+    player?.id,
+    queryState.gameId,
+    queryState.mode,
+    queryState.roomId,
+    selfPlayerId,
+    serverGameStatus?.gameMode,
+    settlementResultData,
+  ]);
 
   const toggleDieLock = (index: number) => {
     if (!canOperateCurrentTurn || rollsLeft >= MAX_ROLLS_PER_TURN || isRolling) return;
@@ -1456,10 +1657,11 @@ export default function GamePage() {
             key={queryState.gameId ?? roomId}
             className={styles.chatPanel}
             ariaLabel="聊天消息"
-            messages={emptyChatMessages}
+            messages={gameChatMessages}
             currentUserName={selfPlayerName}
             currentUserAvatar={player?.avatar}
-            placeholder="说点什么..."
+            placeholder={isGameSocketConnected ? '说点什么...' : '聊天连接中...'}
+            onSendMessage={handleSendGameChatMessage}
             defaultHeight={300}
             minHeight={220}
             maxHeight={430}
@@ -1577,8 +1779,10 @@ export default function GamePage() {
           backLoading={isReturningLobby}
           replayLoading={isRematching}
           actionError={resultActionError}
-          onShare={() => undefined}
-          onSave={() => undefined}
+          experienceReward={experienceReward?.value ?? null}
+          experienceRewardStatus={experienceReward?.status ?? 'idle'}
+          totalExperience={experienceReward?.totalExperience ?? null}
+          experienceRewardError={experienceReward?.error}
         />
       )}
     </>

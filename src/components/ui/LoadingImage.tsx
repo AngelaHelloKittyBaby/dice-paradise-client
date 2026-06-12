@@ -1,5 +1,3 @@
-'use client';
-
 import Image from 'next/image';
 import type { CSSProperties } from 'react';
 import loadingImage from '@/assets/images/ui/icons/loading.png';

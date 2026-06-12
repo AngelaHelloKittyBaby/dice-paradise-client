@@ -20,6 +20,12 @@ interface AuthErrorResponse {
   msg?: string;
 }
 
+interface VerifyAuthTokenRequest {
+  token: string;
+  tokenType?: string | null;
+  signal?: AbortSignal;
+}
+
 export class AuthApiError extends Error {
   status?: number;
 
@@ -131,7 +137,7 @@ export async function loginWithNickname(request: { nickname: string; password: s
   }
 }
 
-export async function verifyAuthToken(request: { token: string; tokenType?: string | null }): Promise<void> {
+export async function verifyAuthToken(request: VerifyAuthTokenRequest): Promise<void> {
   const normalizedToken = request.token.trim();
 
   if (!normalizedToken) {
@@ -143,6 +149,7 @@ export async function verifyAuthToken(request: { token: string; tokenType?: stri
       headers: {
         Authorization: getAuthorizationHeader(normalizedToken, request.tokenType),
       },
+      signal: request.signal,
       timeout: AUTH_TOKEN_VERIFY_TIMEOUT_MS,
     });
   } catch (error) {

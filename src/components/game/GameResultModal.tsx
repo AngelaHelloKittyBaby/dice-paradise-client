@@ -5,12 +5,9 @@ import Image, { type StaticImageData } from 'next/image';
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Check,
   Crown,
-  Download,
   Home,
   RotateCcw,
-  Share2,
   Sparkles,
   X,
 } from 'lucide-react';
@@ -18,7 +15,7 @@ import gameoverArt from '@/assets/images/ui/icons/gameover.png';
 import yachtArt from '@/assets/images/ui/icons/游艇.png';
 import targetArt from '@/assets/images/ui/icons/靶子.png';
 import diceArt from '@/assets/images/ui/icons/骰子.png';
-import { LoadingImage } from '@/components/ui';
+import { LoadingImage, StarIcon } from '@/components/ui';
 import { mockGameResult, mockPlayerDetail } from '@/mocks/gameResult';
 import type {
   GameResultData,
@@ -33,6 +30,8 @@ export interface ScoreDetailProps {
   loading?: boolean;
 }
 
+export type ExperienceRewardStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 export interface GameResultModalProps {
   open: boolean;
   result?: GameResultData;
@@ -41,14 +40,15 @@ export interface GameResultModalProps {
   onClose?: () => void;
   onBackLobby?: () => void;
   onReplay?: () => void | Promise<void>;
-  onShare?: () => void | Promise<void>;
-  onSave?: (autoSave: boolean) => void | Promise<void>;
   backLoading?: boolean;
   replayLoading?: boolean;
   actionError?: string | null;
+  experienceReward?: number | null;
+  experienceRewardStatus?: ExperienceRewardStatus;
+  totalExperience?: number | null;
+  experienceRewardError?: string | null;
   allowOverlayDismiss?: boolean;
   showActions?: boolean;
-  showAutoSave?: boolean;
   showCloseButton?: boolean;
 }
 
@@ -196,14 +196,15 @@ export function GameResultModal({
   onClose,
   onBackLobby,
   onReplay,
-  onShare,
-  onSave,
   backLoading = false,
   replayLoading = false,
   actionError,
+  experienceReward = null,
+  experienceRewardStatus = 'idle',
+  totalExperience = null,
+  experienceRewardError,
   allowOverlayDismiss = false,
   showActions = true,
-  showAutoSave = true,
   showCloseButton = false,
 }: GameResultModalProps) {
   const data = result ?? mockGameResult;
@@ -219,8 +220,6 @@ export function GameResultModal({
     initialSelectedPlayerId ?? winner?.id ?? 0
   );
   const [detailLoading, setDetailLoading] = useState(false);
-  const [autoSave, setAutoSave] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
 
   useEffect(() => {
@@ -264,17 +263,24 @@ export function GameResultModal({
   const selectedDetail = data.playerDetails[selectedPlayer.id] ?? mockPlayerDetail;
   const selectedHighlights = data.playerHighlights?.[selectedPlayer.id] ?? data.highlights;
   const canDismiss = Boolean((showCloseButton || allowOverlayDismiss) && onClose);
-  const showFooter = showActions || showAutoSave;
-
-  async function handleSave() {
-    setSaving(true);
-
-    try {
-      await onSave?.(autoSave);
-    } finally {
-      setSaving(false);
-    }
-  }
+  const hasRewardPanel = experienceRewardStatus !== 'idle' || experienceReward !== null;
+  const showFooter = showActions || hasRewardPanel || actionError;
+  const rewardAmountText =
+    experienceReward !== null
+      ? `+${experienceReward.toLocaleString()}`
+      : experienceRewardStatus === 'saving'
+        ? '结算中'
+        : '--';
+  const rewardStatusText =
+    experienceRewardStatus === 'saving'
+      ? '正在同步到排行榜'
+      : experienceRewardStatus === 'saved'
+        ? totalExperience !== null
+          ? `已同步，总经验 ${totalExperience.toLocaleString()}`
+          : '已同步到排行榜'
+        : experienceRewardStatus === 'error'
+          ? experienceRewardError ?? '同步失败，稍后会自动重试'
+          : '本局结算奖励';
 
   return (
     <div className={styles.overlay} role="presentation" onClick={canDismiss ? onClose : undefined}>
@@ -295,7 +301,6 @@ export function GameResultModal({
           <Image
             src={gameoverArt}
             alt=""
-            priority
             width={790}
             height={527}
             className={styles.gameoverArt}
@@ -393,6 +398,22 @@ export function GameResultModal({
 
         {showFooter && (
           <footer className={styles.footer}>
+            {hasRewardPanel && (
+              <section
+                className={clsx(styles.rewardPanel, experienceRewardStatus === 'error' && styles.rewardPanelError)}
+                aria-live="polite"
+              >
+                <span className={styles.rewardIcon}>
+                  <StarIcon size={44} />
+                </span>
+                <div>
+                  <small>本局获得投骰经验</small>
+                  <strong>{rewardAmountText}</strong>
+                </div>
+                <em>{rewardStatusText}</em>
+              </section>
+            )}
+
             {showActions && (
               <div className={styles.actionRow}>
                 <button
@@ -413,37 +434,10 @@ export function GameResultModal({
                   <RotateCcw size={34} />
                   {replayLoading ? '创建中' : '再来一局'}
                 </button>
-                <button className={clsx(styles.actionButton, styles.goldButton)} type="button" onClick={onShare}>
-                  <Share2 size={34} />
-                  分享战绩
-                </button>
-                <button
-                  className={clsx(styles.actionButton, styles.greenButton)}
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving}
-                >
-                  <Download size={34} />
-                  {saving ? '保存中' : '保存战绩'}
-                </button>
               </div>
             )}
 
             {actionError && <p className={styles.actionError}>{actionError}</p>}
-
-            {showAutoSave && (
-              <label className={styles.autoSave}>
-                <input
-                  type="checkbox"
-                  checked={autoSave}
-                  onChange={event => setAutoSave(event.target.checked)}
-                />
-                <span>
-                  <Check size={22} strokeWidth={3.2} />
-                </span>
-                自动保存本局战绩（可在历史记录中查看）
-              </label>
-            )}
           </footer>
         )}
 

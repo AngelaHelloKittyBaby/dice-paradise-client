@@ -1,13 +1,15 @@
 import { createApiClient } from '@/modules/api/createApiClient';
 import type {
-  LeaderboardGamesRankingData,
-  LeaderboardRankingData,
+  GameSettleData,
+  GameSettleRequest,
+  LeaderboardExperienceData,
+  LeaderboardHighestScoreData,
+  LeaderboardWinRateData,
+  LeaderboardWinStreakData,
+  LeaderboardUpdateGamesMode,
   UpdateLeaderboardGamesData,
   UpdateLeaderboardGamesRequest,
-  UpdateLeaderboardWinsData,
-  UpdateLeaderboardWinsRequest,
 } from '@/types/leaderboardApi';
-import type { ApiGameMode } from '@/types/gameApi';
 
 interface LeaderboardApiEnvelope<T> {
   code: number;
@@ -31,38 +33,76 @@ function unwrapLeaderboardApiResponse<T>(response: LeaderboardApiEnvelope<T>, fa
   return response.data;
 }
 
-function unwrapLeaderboardNullableApiResponse<T>(response: LeaderboardApiEnvelope<T> | T, fallbackMessage: string): T {
-  if (response && typeof response === 'object' && 'code' in response) {
-    const envelope = response as LeaderboardApiEnvelope<T>;
-    if (envelope.code !== 200) {
-      throw new Error(envelope.msg || fallbackMessage);
-    }
+function normalizeLimit(limit: number) {
+  if (!Number.isFinite(limit)) return 10;
 
-    return envelope.data;
-  }
-
-  return response as T;
+  return Math.min(Math.max(Math.trunc(limit), 1), 100);
 }
 
-export async function updateLeaderboardWins(
-  winnerId: number,
-  gameMode: ApiGameMode
-): Promise<UpdateLeaderboardWinsData> {
-  const request: UpdateLeaderboardWinsRequest = {
-    winner_id: winnerId,
-    game_mode: gameMode,
-  };
-  const response = await apiClient.post<LeaderboardApiEnvelope<UpdateLeaderboardWinsData>>(
-    '/leaderboard/update-wins',
+export async function getLeaderboardHighestScore(limit = 10): Promise<LeaderboardHighestScoreData> {
+  const response = await apiClient.get<LeaderboardApiEnvelope<LeaderboardHighestScoreData>>(
+    '/leaderboard/highest-score',
+    {
+      params: {
+        limit: normalizeLimit(limit),
+      },
+    }
+  );
+
+  return unwrapLeaderboardApiResponse(response.data, '获取历史最高分排行榜失败');
+}
+
+export async function getLeaderboardExperience(limit = 10): Promise<LeaderboardExperienceData> {
+  const response = await apiClient.get<LeaderboardApiEnvelope<LeaderboardExperienceData>>(
+    '/leaderboard/experience',
+    {
+      params: {
+        limit: normalizeLimit(limit),
+      },
+    }
+  );
+
+  return unwrapLeaderboardApiResponse(response.data, '获取投骰经验值排行榜失败');
+}
+
+export async function getLeaderboardWinStreak(limit = 10): Promise<LeaderboardWinStreakData> {
+  const response = await apiClient.get<LeaderboardApiEnvelope<LeaderboardWinStreakData>>(
+    '/leaderboard/win-streak',
+    {
+      params: {
+        limit: normalizeLimit(limit),
+      },
+    }
+  );
+
+  return unwrapLeaderboardApiResponse(response.data, '获取最高连胜局数排行榜失败');
+}
+
+export async function getLeaderboardWinRate(limit = 10): Promise<LeaderboardWinRateData> {
+  const response = await apiClient.get<LeaderboardApiEnvelope<LeaderboardWinRateData>>(
+    '/leaderboard/win-rate',
+    {
+      params: {
+        limit: normalizeLimit(limit),
+      },
+    }
+  );
+
+  return unwrapLeaderboardApiResponse(response.data, '获取胜率排行榜失败');
+}
+
+export async function settleLeaderboardGame(request: GameSettleRequest): Promise<GameSettleData> {
+  const response = await apiClient.post<LeaderboardApiEnvelope<GameSettleData>>(
+    '/leaderboard/game-settle',
     request
   );
 
-  return unwrapLeaderboardApiResponse(response.data, '更新胜利次数失败');
+  return unwrapLeaderboardApiResponse(response.data, '游戏结算失败');
 }
 
 export async function updateLeaderboardGames(
   winnerId: number,
-  gameMode: ApiGameMode,
+  gameMode: LeaderboardUpdateGamesMode,
   lastPlayTime = formatLocalIsoDateTime(new Date())
 ): Promise<UpdateLeaderboardGamesData> {
   const request: UpdateLeaderboardGamesRequest = {
@@ -70,34 +110,10 @@ export async function updateLeaderboardGames(
     game_mode: gameMode,
     last_play_time: lastPlayTime,
   };
-  const response = await apiClient.post<LeaderboardApiEnvelope<UpdateLeaderboardGamesData> | UpdateLeaderboardGamesData>(
+  const response = await apiClient.post<LeaderboardApiEnvelope<UpdateLeaderboardGamesData>>(
     '/leaderboard/update-games',
     request
   );
 
-  return unwrapLeaderboardNullableApiResponse(response.data, '更新总对局次数失败');
-}
-
-export async function getLeaderboardRanking(limit = 10, userId?: string | null): Promise<LeaderboardRankingData> {
-  const response = await apiClient.get<LeaderboardApiEnvelope<LeaderboardRankingData>>('/leaderboard/ranking', {
-    params: {
-      limit,
-      ...(userId ? { user_id: userId } : {}),
-    },
-  });
-
-  return unwrapLeaderboardApiResponse(response.data, '获取排行榜失败');
-}
-
-export async function getLeaderboardGamesRanking(limit = 10): Promise<LeaderboardGamesRankingData> {
-  const response = await apiClient.get<LeaderboardApiEnvelope<LeaderboardGamesRankingData>>(
-    '/leaderboard/ranking-games',
-    {
-      params: {
-        limit,
-      },
-    }
-  );
-
-  return unwrapLeaderboardApiResponse(response.data, '获取总对局排行榜失败');
+  return unwrapLeaderboardApiResponse(response.data, '更新总对局次数失败');
 }

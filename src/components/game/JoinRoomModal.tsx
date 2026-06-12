@@ -224,7 +224,7 @@ export function JoinRoomModal({
                 'drop-shadow(0 34px 60px rgba(5, 5, 24, 0.58)) drop-shadow(0 0 46px rgba(255, 190, 65, 0.26))',
             }}
           >
-            <Image src={joinRoomBoardImage} alt="" fill sizes="1120px" className="pointer-events-none object-contain" priority />
+            <Image src={joinRoomBoardImage} alt="" fill sizes="1120px" className="pointer-events-none object-contain" />
 
             <motion.div
               className="pointer-events-none absolute left-[50%] top-[28px] h-[102px] w-[270px] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(255,242,166,0.52),rgba(255,182,55,0.12)_54%,transparent_72%)] blur-[8px]"
@@ -263,7 +263,6 @@ export function JoinRoomModal({
                     fill
                     sizes="248px"
                     className="pointer-events-none object-cover"
-                    priority
                   />
 
                   <motion.span
@@ -271,7 +270,7 @@ export function JoinRoomModal({
                     animate={{ rotate: 360 }}
                     transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
                   >
-                    <Image src={diceIconImage} alt="" fill sizes="34px" className="object-contain" priority />
+                    <Image src={diceIconImage} alt="" fill sizes="34px" className="object-contain" />
                   </motion.span>
 
                   <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[14px] opacity-40">
